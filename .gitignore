@@ -1,0 +1,3 @@
+*.code-workspace
+_test_*
+node_modules/
