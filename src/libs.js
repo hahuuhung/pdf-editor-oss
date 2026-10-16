@@ -7,6 +7,8 @@ export const LIB_URLS = {
   tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js', // Apache-2.0
   jszip: 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', // MIT
   docx: 'https://cdn.jsdelivr.net/npm/docx@9.5.1/dist/index.iife.js', // MIT
+  xlsx: 'https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js', // Apache-2.0
+  mammoth: 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js', // BSD-2-Clause
 };
 
 const loading = new Map();

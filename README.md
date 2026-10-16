@@ -20,6 +20,17 @@ Thêm: hoàn tác/làm lại cho mọi thao tác, bảng lệnh Ctrl+K, chủ đ
 
 Chữ tiếng Việt khi xuất PDF cần một font `.ttf` hỗ trợ tiếng Việt (Tệp › Chọn font), ví dụ `C:\Windows\Fonts\arial.ttf`.
 
+## Tài khoản VET VIRAL
+
+Đăng nhập không bắt buộc: mọi tính năng chỉnh sửa vẫn dùng được khi chưa đăng nhập. Đăng nhập bằng tài khoản [VET VIRAL](https://vetviral.com) để xem tài khoản (tên, gói, số điểm) và nhận thông báo tính năng mới, khuyến mãi trong tab **Tin**.
+
+- Cách đăng nhập: bấm **Đăng nhập** ở góc trên bên phải, mở vetviral.com, đăng nhập rồi bấm **Cho phép** khi thấy đúng mã đang hiện trong PDF Editor.
+- PDF Editor không nhận mật khẩu hay phiên web của VET VIRAL. Nó giữ một token ứng dụng riêng trong trình duyệt, token này chỉ đọc được tài khoản và thông báo; không dùng điểm, không thanh toán.
+- Tài liệu PDF không bao giờ được gửi đi. Gửi lên VET VIRAL chỉ có tên trình duyệt chung (ví dụ "Chrome trên Windows") để bạn nhận ra kết nối.
+- Thu hồi bất cứ lúc nào: trong PDF Editor (**Đăng xuất**) hoặc trên vetviral.com (Cài đặt › Bảo mật › Ứng dụng đã kết nối).
+
+Mã nguồn: `src/account.js`.
+
 ## Chạy trên máy
 
 Trang dùng ES modules nên cần một máy chủ HTTP, không mở trực tiếp bằng `file://`:

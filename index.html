@@ -379,9 +379,9 @@
     .act span { font-size: 12.5px; }
 
     /* Side panels */
-    .panel-head .tabs { display: flex; gap: 2px; }
+    .panel-head .tabs { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
     .panel-head.tabbed { padding: 6px 8px; }
-    .tabs button { padding: 4px 8px; color: var(--muted); font-weight: 500; }
+    .tabs button { padding: 4px 6px; color: var(--muted); font-weight: 500; flex: none; }
     .tabs button.on { background: var(--selected); color: var(--accent-text); }
     .tabs .badge { font-size: 11px; color: var(--faint); }
     .thumb-actions { display: flex; gap: 0; }
@@ -431,6 +431,31 @@
     .stamp-text { font-family: Helvetica, Arial, sans-serif; }
     .search-hit { fill: #ffb000; fill-opacity: 0.28; pointer-events: none; mix-blend-mode: multiply; }
     .search-hit.cur { fill: #ff6a00; fill-opacity: 0.45; stroke: #ff6a00; stroke-width: 0.8; }
+    /* VET VIRAL account: menu-bar area, dropdown, announcements panel, login dialog */
+    .account-area { display: flex; align-items: center; gap: 2px; margin-left: 6px; }
+    .account-btn { height: 24px; padding: 0 8px 0 3px; color: var(--text); font-size: 12px; max-width: 180px; }
+    .account-btn .label { overflow: hidden; text-overflow: ellipsis; }
+    .avatar { width: 18px; height: 18px; flex: none; border-radius: 50%; object-fit: cover; background: var(--accent-soft); color: var(--accent-text); display: inline-grid; place-items: center; font-size: 10px; font-weight: 700; }
+    .bell { position: relative; padding: 3px; }
+    .bell .count { position: absolute; top: -3px; right: -4px; min-width: 15px; height: 15px; border-radius: 8px; background: var(--red); color: #fff; font-size: 10px; line-height: 15px; text-align: center; padding: 0 3px; }
+    .dropdown.right { left: auto; right: 0; }
+    .acct-head { padding: 8px 10px; border-bottom: 1px solid var(--divider); margin-bottom: 4px; }
+    .acct-head .name { font-weight: 600; }
+    .acct-head .acct-sub { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+    .news-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 8px; }
+    .news-head button { border: 1px solid var(--border); font-size: 12px; }
+    .news-item { border: 1px solid var(--divider); border-radius: 8px; padding: 10px; margin-bottom: 8px; background: var(--card); }
+    .news-item.unread { border-left: 3px solid var(--accent); }
+    .news-item h3 { font-size: 13px; margin: 4px 0; }
+    .news-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.5; margin: 0; }
+    .news-item img { display: block; width: 100%; border-radius: 6px; margin-top: 6px; }
+    .news-meta { display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 11px; }
+    .news-badge { font-size: 10.5px; font-weight: 600; color: var(--accent-text); background: var(--accent-soft); border-radius: 4px; padding: 1px 6px; }
+    .news-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .news-actions a, .news-actions button { font-size: 12px; border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; color: var(--text); text-decoration: none; }
+    .news-actions a.go { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .login-code { font: 700 28px/1.2 ui-monospace, Consolas, monospace; letter-spacing: 0.12em; text-align: center; background: var(--hover); border-radius: 8px; padding: 10px; margin: 8px 0 12px; }
+    .button-link { display: flex; justify-content: center; align-items: center; gap: 6px; background: var(--accent); color: #fff; border-radius: 6px; padding: 8px 12px; text-decoration: none; font-weight: 600; }
     .ocr-word { fill: #149ca8; fill-opacity: 0.12; stroke: #149ca8; stroke-width: 0.4; pointer-events: none; }
     .dlg-list { margin: 0 0 8px; padding-left: 20px; line-height: 1.6; }
     .sel-handle { fill: var(--accent); stroke: #fff; stroke-width: 0.5; pointer-events: all; cursor: nwse-resize; }
@@ -499,6 +524,43 @@
     .pal-item .key { color: var(--faint); font-size: 12px; }
     .pal-item.on { background: var(--selected); }
 
+    /* Conversion Hub */
+    .hub-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--divider); padding: 0 16px; margin-bottom: 12px; }
+    .hub-tab { padding: 8px 14px; border-radius: 6px 6px 0 0; border: 1px solid transparent; border-bottom: none; font-weight: 500; cursor: pointer; color: var(--muted); }
+    .hub-tab.on { color: var(--accent-text); background: var(--card); border-color: var(--divider); border-bottom: 2px solid var(--accent); }
+    .format-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .format-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      text-align: center;
+      background: var(--field);
+      transition: all 0.15s ease;
+    }
+    .format-card:hover { border-color: var(--accent); background: var(--hover); }
+    .format-card.on { border-color: var(--accent); background: var(--selected); color: var(--accent-text); }
+    .format-card .f-badge { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--accent); color: #fff; }
+    .format-card .f-title { font-weight: 600; font-size: 12.5px; }
+    .format-card .f-desc { font-size: 11px; color: var(--muted); }
+    .conv-box { background: var(--hover); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+    .conv-progress { width: 100%; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin: 8px 0; }
+    .conv-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s ease; }
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      background: var(--field);
+      transition: border-color 0.15s ease;
+    }
+    .dropzone:hover, .dropzone.dragover { border-color: var(--accent); background: var(--selected); }
+
     @media (max-width: 900px) {
       .panel.left { display: none; }
       .panel.right { width: 220px; }
@@ -534,11 +596,13 @@
           <button type="button" data-panel="comments" role="tab">Chú thích <span id="comment-count" class="badge"></span></button>
           <button type="button" data-panel="search" role="tab">Tìm kiếm</button>
           <button type="button" data-panel="forms" role="tab">Biểu mẫu</button>
+          <button type="button" data-panel="news" role="tab">Tin <span id="news-count" class="badge"></span></button>
         </div>
       </div>
       <div class="panel-body" id="comments"></div>
       <div class="panel-body hidden" id="search-panel"></div>
       <div class="panel-body hidden" id="forms-panel"></div>
+      <div class="panel-body hidden" id="news-panel"></div>
     </aside>
   </div>
 
@@ -553,6 +617,8 @@
   <input type="file" id="image-input" accept="image/*" hidden />
   <input type="file" id="combine-input" accept="application/pdf,.pdf" multiple hidden />
   <input type="file" id="images-pdf-input" accept="image/*" multiple hidden />
+  <input type="file" id="excel-pdf-input" accept=".xlsx,.xls,.csv" hidden />
+  <input type="file" id="docx-pdf-input" accept=".docx" hidden />
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>

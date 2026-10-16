@@ -58,6 +58,25 @@ import { compressPdf, decryptPdf, encryptPdf, isEncrypted } from './protect.js';
 import { OCR_LANGUAGES, ocrPage } from './ocr.js';
 import { buildDocx, extractImages, zipFiles } from './extract.js';
 import { groupLines, pagesToHtml, pagesToText } from './textlayout.js';
+import {
+  clusterTextToGrid,
+  docxToPdf,
+  excelToPdf,
+  exportPagesToImages,
+  exportToExcel,
+  imagesToPdfAdvanced,
+  parseUserPageRange,
+} from './converter.js';
+import {
+  AccountClient,
+  VETVIRAL_URL,
+  clientNameFrom,
+  isSessionExpired,
+  planLabel,
+  resolveVetviralUrl,
+  safeStorage,
+  unreadCount,
+} from './account.js';
 import { exportPdf } from './export.js';
 import { confirmDialog, el, field, icon, iconButton, isDialogOpen, openDialog, svgEl } from './dom.js';
 
@@ -143,6 +162,11 @@ const ACTIONS = {
   toggleOcr: { label: 'Hiện/ẩn khung chữ OCR', icon: 'scan', needsDoc: true, checked: () => state.showOcr, run: toggleOcrBoxes },
   exportText: { label: 'Xuất văn bản (.txt)', icon: 'file', needsDoc: true, run: () => exportContent('txt') },
   exportWord: { label: 'Xuất Word (.docx)', icon: 'word', needsDoc: true, run: () => exportContent('docx') },
+  exportExcel: { label: 'Xuất Excel (.xlsx)', icon: 'excel', needsDoc: true, run: () => exportExcelCurrent() },
+  exportImagesDpi: { label: 'Xuất ảnh chất lượng cao…', icon: 'png', needsDoc: true, run: () => openExportImagesDialog() },
+  convertHub: { label: 'Trung tâm chuyển đổi…', icon: 'sync', run: () => openConversionHub() },
+  excelToPdf: { label: 'Tạo PDF từ Excel…', icon: 'excel', run: () => els.excelPdfInput.click() },
+  docxToPdf: { label: 'Tạo PDF từ Word…', icon: 'word', run: () => els.docxPdfInput.click() },
   exportHtml: { label: 'Xuất trang web (.html)', icon: 'html', needsDoc: true, run: () => exportContent('html') },
   extractImages: { label: 'Tách tất cả ảnh (.zip)', icon: 'images', needsDoc: true, run: extractAllImages },
   compress: { label: 'Giảm dung lượng', icon: 'compress', needsDoc: true, run: compressDocument },
@@ -152,10 +176,14 @@ const ACTIONS = {
   themeLight: { label: 'Chủ đề sáng', icon: 'info', checked: () => state.theme === 'light', run: () => applyTheme('light') },
   themeDark: { label: 'Chủ đề tối', icon: 'info', checked: () => state.theme === 'dark', run: () => applyTheme('dark') },
   shortcuts: { label: 'Phím tắt', icon: 'command', run: showShortcuts },
+  login: { label: 'Đăng nhập VET VIRAL…', icon: 'user', enabled: () => !account.signedIn, run: openLoginDialog },
+  news: { label: 'Thông báo VET VIRAL', icon: 'bell', run: () => showPanel('news') },
+  manageAccount: { label: 'Quản lý tài khoản VET VIRAL', icon: 'external', enabled: () => account.signedIn, run: () => openExternal(`${VETVIRAL_URL}/settings`) },
+  logout: { label: 'Đăng xuất VET VIRAL', icon: 'logout', enabled: () => account.signedIn, run: logoutAccount },
 };
 
 const MENUS = [
-  { label: 'Tệp', items: ['open', 'newBlank', 'imagesToPdf', '-', 'export', 'exportImage', 'print', '-', 'chooseFont', 'properties'] },
+  { label: 'Tệp', items: ['open', 'newBlank', 'convertHub', '-', 'imagesToPdf', 'excelToPdf', 'docxToPdf', '-', 'export', 'exportImage', 'print', '-', 'chooseFont', 'properties'] },
   { label: 'Sửa', items: ['undo', 'redo', '-', 'delete', '-', 'find', 'palette'] },
   { label: 'Xem', items: ['zoomIn', 'zoomOut', 'zoom100', 'fitPage', 'fitWidth', '-', 'themeSystem', 'themeLight', 'themeDark'] },
   { label: 'Trang', items: ['rotateLeft', 'rotateRight', 'movePageUp', 'movePageDown', '-', 'insertBlank', 'duplicatePage', 'deletePage', '-', 'extractPages', 'combine'] },
@@ -168,9 +196,9 @@ const MENUS = [
       '-', { tool: 'redact' },
     ],
   },
-  { label: 'Chuyển đổi', items: ['ocr', 'toggleOcr', '-', 'exportText', 'exportWord', 'exportHtml', 'extractImages', 'exportImage', '-', 'compress'] },
+  { label: 'Chuyển đổi', items: ['convertHub', '-', 'ocr', 'toggleOcr', '-', 'exportExcel', 'exportWord', 'exportText', 'exportHtml', '-', 'exportImagesDpi', 'extractImages', 'exportImage', '-', 'compress'] },
   { label: 'Bảo vệ', items: ['protect', 'sanitize', '-', { tool: 'redact' }] },
-  { label: 'Trợ giúp', items: ['shortcuts', 'palette'] },
+  { label: 'Trợ giúp', items: ['shortcuts', 'palette', '-', 'login', 'news', 'manageAccount', 'logout'] },
 ];
 
 // Mode tabs use the tool-group hues of the reference app (pdfcraft catalog).
@@ -210,8 +238,10 @@ const MODES = {
     hue: 'var(--teal)',
     groups: [
       ['select'],
+      [{ action: 'convertHub' }],
       [{ action: 'ocr' }, { action: 'toggleOcr' }],
-      [{ action: 'exportWord' }, { action: 'exportText' }, { action: 'exportHtml' }, { action: 'extractImages' }, { action: 'exportImage' }],
+      [{ action: 'exportExcel' }, { action: 'exportWord' }, { action: 'exportImagesDpi' }],
+      [{ action: 'excelToPdf' }, { action: 'docxToPdf' }, { action: 'imagesToPdf' }],
       [{ action: 'compress' }],
     ],
     defaultTool: 'select',
@@ -239,6 +269,8 @@ const els = {
   comments: $('comments'),
   searchPanel: $('search-panel'),
   formsPanel: $('forms-panel'),
+  newsPanel: $('news-panel'),
+  newsCount: $('news-count'),
   status: $('status'),
   pageinfo: $('pageinfo'),
   zoominfo: $('zoominfo'),
@@ -247,6 +279,8 @@ const els = {
   imageInput: $('image-input'),
   combineInput: $('combine-input'),
   imagesPdfInput: $('images-pdf-input'),
+  excelPdfInput: $('excel-pdf-input'),
+  docxPdfInput: $('docx-pdf-input'),
 };
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
@@ -280,7 +314,11 @@ const state = {
   docInfo: null,
   busy: false,
   showOcr: false,
+  // VET VIRAL account: signed-in user and announcements (null user = not signed in or not loaded yet).
+  vv: { user: null, announcements: [], loaded: false },
 };
+
+const account = new AccountClient({ storage: safeStorage() });
 
 const quick = {};
 let renderToken = 0;
@@ -399,6 +437,7 @@ function runAction(id) {
   const a = ACTIONS[id];
   if (!a) return;
   if (a.needsDoc && !state.pdfBytes) return setStatus('Hãy mở một tệp PDF trước.', true);
+  if (a.enabled && !a.enabled()) return setStatus(account.signedIn ? 'Bạn đã đăng nhập VET VIRAL.' : 'Bạn chưa đăng nhập VET VIRAL.');
   return a.run();
 }
 
@@ -485,7 +524,8 @@ function menuEntry(item) {
     return { label: info.label, icon: info.icon, checked: state.tool === item.tool, run: () => setTool(item.tool) };
   }
   const a = ACTIONS[item];
-  return { label: a.label, icon: a.icon, key: a.key, checked: a.checked?.(), disabled: a.needsDoc && !state.pdfBytes, run: () => runAction(item) };
+  const disabled = (a.needsDoc && !state.pdfBytes) || (a.enabled && !a.enabled());
+  return { label: a.label, icon: a.icon, key: a.key, checked: a.checked?.(), disabled, run: () => runAction(item) };
 }
 
 function openMenu(wrap, menu) {
@@ -517,9 +557,11 @@ function buildMenubar() {
     wrap.append(el('button', { onclick: (e) => { e.stopPropagation(); openMenu(wrap, menu); } }, menu.label));
     els.menubar.append(wrap);
   }
+  els.accountArea = el('div', { class: 'account-area' });
   els.menubar.append(
     el('span', { class: 'grow' }),
     el('button', { class: 'search-cmd', onclick: () => runAction('palette'), title: 'Tìm công cụ và lệnh (Ctrl+K)' }, icon('search', 15), 'Tìm công cụ và lệnh…', el('span', { class: 'key' }, 'Ctrl+K')),
+    els.accountArea,
   );
   document.addEventListener('click', closeMenus);
 }
@@ -1314,9 +1356,11 @@ function renderPanel() {
   els.comments.classList.toggle('hidden', state.panel !== 'comments');
   els.searchPanel.classList.toggle('hidden', state.panel !== 'search');
   els.formsPanel.classList.toggle('hidden', state.panel !== 'forms');
+  els.newsPanel.classList.toggle('hidden', state.panel !== 'news');
   if (state.panel === 'comments') renderComments();
   if (state.panel === 'search') renderSearchResults();
   if (state.panel === 'forms') renderForms();
+  if (state.panel === 'news') renderNews();
 }
 
 function renderComments() {
@@ -1886,6 +1930,371 @@ function extractAllImages() {
   });
 }
 
+async function exportExcelCurrent({ separateSheets = true, pageRange = '' } = {}) {
+  if (!state.doc) return setStatus('Hãy mở một tệp PDF trước.', true);
+  return withBusy('Đang xuất bảng tính Excel…', async () => {
+    const doc = await pdfjsLib.getDocument({ data: await buildOutput({ watermark: null, headerFooter: null }) }).promise;
+    const pagesData = [];
+    try {
+      const pageNumbers = parseUserPageRange(pageRange, doc.numPages);
+      for (let i = 0; i < pageNumbers.length; i++) {
+        const pageNum = pageNumbers[i];
+        setStatus(`Đang đọc bảng trang ${pageNum} (${i + 1}/${pageNumbers.length})…`);
+        const page = await doc.getPage(pageNum);
+        const items = await textItemsOf(page);
+        pagesData.push(items);
+      }
+    } finally {
+      doc.destroy();
+    }
+    const base = baseName(state.fileName);
+    const blob = await exportToExcel(pagesData, { separateSheets, title: base });
+    download(blob, `${base}.xlsx`);
+    setStatus(`Đã xuất ${base}.xlsx (${pagesData.length} trang) thành công.`);
+  });
+}
+
+function openExportImagesDialog() {
+  if (!state.doc) return setStatus('Hãy mở một tệp PDF trước.', true);
+  const total = state.pageSizes.length;
+  const rangeInput = el('input', { type: 'text', value: `1-${total}`, placeholder: `Ví dụ 1-${total}` });
+  const dpiSelect = el('select', {},
+    el('option', { value: '72' }, '72 DPI (Màn hình nhẹ)'),
+    el('option', { value: '150', selected: true }, '150 DPI (Tiêu chuẩn tài liệu)'),
+    el('option', { value: '300' }, '300 DPI (In ấn chất lượng cao)'),
+  );
+  const fmtSelect = el('select', {},
+    el('option', { value: 'png' }, 'PNG (Độ nét cao, không nén)'),
+    el('option', { value: 'jpg' }, 'JPG (Dung lượng nhẹ)'),
+  );
+  const qualityRange = el('input', { type: 'range', min: '50', max: '100', value: '90' });
+  const qualityVal = el('output', { text: '90%' });
+  qualityRange.oninput = () => { qualityVal.textContent = `${qualityRange.value}%`; };
+  const qualityRow = el('div', { class: 'form-field inline hidden' }, qualityVal, qualityRange, el('span', { class: 'lbl' }, 'Chất lượng JPG:'));
+
+  fmtSelect.onchange = () => {
+    qualityRow.classList.toggle('hidden', fmtSelect.value !== 'jpg');
+  };
+
+  const error = el('p', { class: 'dlg-error' });
+
+  openDialog({
+    title: 'Xuất ảnh các trang chất lượng cao',
+    width: 440,
+    body: el('div', {},
+      field(`Dải trang cần xuất (1-${total})`, rangeInput, 'Để trống hoặc ghi 1-3, 5 để xuất các trang tùy chọn.'),
+      field('Độ phân giải (DPI)', dpiSelect, 'DPI càng cao thì ảnh càng sắc nét.'),
+      field('Định dạng ảnh', fmtSelect),
+      qualityRow,
+      error,
+    ),
+    actions: [
+      { label: 'Hủy' },
+      {
+        label: 'Bắt đầu xuất ảnh',
+        primary: true,
+        run: async () => {
+          try {
+            await exportImagesWithSettings({
+              format: fmtSelect.value,
+              dpi: Number(dpiSelect.value),
+              quality: Number(qualityRange.value) / 100,
+              pageRange: rangeInput.value,
+            });
+          } catch (err) {
+            error.textContent = err.message;
+            return false;
+          }
+        },
+      },
+    ],
+  });
+}
+
+async function exportImagesWithSettings({ format = 'png', dpi = 150, quality = 0.9, pageRange = '' } = {}) {
+  return withBusy('Đang kết xuất ảnh…', async () => {
+    const doc = await pdfjsLib.getDocument({ data: await buildOutput() }).promise;
+    try {
+      const pageNumbers = parseUserPageRange(pageRange, doc.numPages);
+      const base = baseName(state.fileName);
+      const result = await exportPagesToImages(doc, {
+        format,
+        dpi,
+        quality,
+        pageNumbers,
+        baseFileName: base,
+        onProgress: (cur, total, pageNum) => {
+          setStatus(`Đang kết xuất ảnh trang ${pageNum} (${cur}/${total})…`);
+        },
+      });
+      download(result.blob, result.fileName);
+      setStatus(`Đã xuất ${result.fileName} thành công.`);
+    } finally {
+      doc.destroy();
+    }
+  });
+}
+
+async function convertExcelFileToPdf(file) {
+  return withBusy('Đang chuyển đổi Excel sang PDF…', async () => {
+    const buf = await file.arrayBuffer();
+    const pdfBytes = await excelToPdf(buf, { title: file.name.replace(/\.[^.]+$/, '') });
+    await openBytes(pdfBytes, file.name.replace(/\.[^.]+$/, '.pdf'));
+    setStatus(`Đã tạo PDF thành công từ bảng tính ${file.name}.`);
+  });
+}
+
+async function convertDocxFileToPdf(file) {
+  return withBusy('Đang chuyển đổi Word sang PDF…', async () => {
+    const buf = await file.arrayBuffer();
+    const pdfBytes = await docxToPdf(buf, { title: file.name.replace(/\.[^.]+$/, '') });
+    await openBytes(pdfBytes, file.name.replace(/\.[^.]+$/, '.pdf'));
+    setStatus(`Đã tạo PDF thành công từ tài liệu Word ${file.name}.`);
+  });
+}
+
+function openConversionHub() {
+  let activeTab = 'export';
+  let selectedExportFormat = 'xlsx';
+
+  const tabExport = el('button', { class: 'hub-tab on', type: 'button' }, 'Xuất PDF sang định dạng khác');
+  const tabImport = el('button', { class: 'hub-tab', type: 'button' }, 'Tạo PDF từ tệp khác');
+  const tabsBar = el('div', { class: 'hub-tabs' }, tabExport, tabImport);
+
+  const formatCards = [
+    { id: 'xlsx', badge: 'XLSX', title: 'Excel Bảng tính', desc: 'Tự động nhận diện cột, hàng & số' },
+    { id: 'docx', badge: 'DOCX', title: 'Word Văn bản', desc: 'Giữ cấu trúc đoạn & tiêu đề' },
+    { id: 'images', badge: 'IMG', title: 'Ảnh (PNG/JPG)', desc: 'Tùy chọn DPI 72 / 150 / 300' },
+    { id: 'txt', badge: 'TXT', title: 'Văn bản thuần', desc: 'Trích xuất chữ UTF-8 / HTML' },
+  ];
+
+  const cardEls = {};
+  const gridEl = el('div', { class: 'format-grid' });
+
+  formatCards.forEach((c) => {
+    const card = el('div', { class: `format-card ${c.id === selectedExportFormat ? 'on' : ''}` },
+      el('span', { class: 'f-badge' }, c.badge),
+      el('span', { class: 'f-title' }, c.title),
+      el('span', { class: 'f-desc' }, c.desc),
+    );
+    card.onclick = () => {
+      selectedExportFormat = c.id;
+      Object.values(cardEls).forEach((cardNode) => cardNode.classList.remove('on'));
+      card.classList.add('on');
+      renderExportOptions();
+    };
+    cardEls[c.id] = card;
+    gridEl.append(card);
+  });
+
+  const exportOptsContainer = el('div', { class: 'conv-box' });
+  const total = state.pageSizes.length || 1;
+  const pageRangeInput = el('input', { type: 'text', value: state.pageSizes.length ? `1-${state.pageSizes.length}` : '1', placeholder: 'Ví dụ 1-3, 5' });
+  const sheetSepCheckbox = el('input', { type: 'checkbox', checked: true });
+  const dpiSelect = el('select', {},
+    el('option', { value: '72' }, '72 DPI (Màn hình nhẹ)'),
+    el('option', { value: '150', selected: true }, '150 DPI (Tiêu chuẩn)'),
+    el('option', { value: '300' }, '300 DPI (In ấn chất lượng cao)'),
+  );
+  const imgFormatSelect = el('select', {},
+    el('option', { value: 'png' }, 'PNG (Chất lượng gốc)'),
+    el('option', { value: 'jpg' }, 'JPG (Dung lượng nhẹ)'),
+  );
+  const textFormatSelect = el('select', {},
+    el('option', { value: 'txt' }, 'Văn bản thuần (.txt)'),
+    el('option', { value: 'html' }, 'Trang web (.html)'),
+  );
+
+  function renderExportOptions() {
+    exportOptsContainer.innerHTML = '';
+    if (selectedExportFormat === 'xlsx') {
+      exportOptsContainer.append(
+        field('Dải trang trích xuất bảng', pageRangeInput, 'Để trống hoặc nhập khoảng trang cần xuất.'),
+        el('label', { class: 'lbl small' }, sheetSepCheckbox, 'Tách mỗi trang PDF thành một trang tính (Sheet) riêng'),
+      );
+    } else if (selectedExportFormat === 'docx') {
+      exportOptsContainer.append(
+        field('Dải trang cần xuất Word', pageRangeInput),
+        el('p', { class: 'dlg-hint' }, 'Hệ thống sẽ giữ lại cấu trúc tiêu đề, phân đoạn và dòng chữ.'),
+      );
+    } else if (selectedExportFormat === 'images') {
+      exportOptsContainer.append(
+        field('Dải trang kết xuất ảnh', pageRangeInput),
+        field('Độ phân giải ảnh (DPI)', dpiSelect),
+        field('Định dạng ảnh', imgFormatSelect, 'Nếu xuất nhiều hơn 1 trang, tệp ZIP sẽ được tự động đóng gói.'),
+      );
+    } else if (selectedExportFormat === 'txt') {
+      exportOptsContainer.append(
+        field('Định dạng văn bản', textFormatSelect),
+        el('p', { class: 'dlg-hint' }, 'Bảo toàn tiếng Việt có dấu chuẩn Unicode UTF-8.'),
+      );
+    }
+  }
+  renderExportOptions();
+
+  const exportView = el('div', {},
+    el('p', { class: 'dlg-label', style: 'margin-bottom:6px' }, '1. Chọn định dạng đích:'),
+    gridEl,
+    el('p', { class: 'dlg-label', style: 'margin-bottom:6px' }, '2. Tùy chọn chuyển đổi:'),
+    exportOptsContainer,
+  );
+
+  // --- TAB 2: IMPORT VIEW ---
+  let selectedFiles = [];
+  const fileListEl = el('div', { style: 'margin-top:10px' });
+  const pageSizeSelect = el('select', {},
+    el('option', { value: 'a4' }, 'Khổ A4 (210 x 297 mm)'),
+    el('option', { value: 'fit' }, 'Khớp kích thước ảnh gốc'),
+    el('option', { value: 'letter' }, 'Khổ Letter'),
+  );
+  const orientSelect = el('select', {},
+    el('option', { value: 'auto' }, 'Tự động theo ảnh/bảng'),
+    el('option', { value: 'portrait' }, 'Hướng dọc (Portrait)'),
+    el('option', { value: 'landscape' }, 'Hướng ngang (Landscape)'),
+  );
+  const marginSelect = el('select', {},
+    el('option', { value: '0' }, 'Không lề (0 pt)'),
+    el('option', { value: '20', selected: true }, 'Lề chuẩn (20 pt)'),
+    el('option', { value: '36' }, 'Lề rộng (36 pt)'),
+  );
+
+  const dropzoneEl = el('div', { class: 'dropzone' },
+    el('strong', { text: 'Kéo và thả tệp Word (.docx), Excel (.xlsx/.csv) hoặc Ảnh vào đây' }),
+    el('p', { class: 'dlg-hint', text: 'hoặc nhấn để chọn tệp từ máy tính' }),
+  );
+  const filePickerInput = el('input', { type: 'file', accept: '.docx,.xlsx,.xls,.csv,image/*', multiple: true, hidden: true });
+
+  dropzoneEl.onclick = () => filePickerInput.click();
+  dropzoneEl.ondragover = (e) => { e.preventDefault(); dropzoneEl.classList.add('dragover'); };
+  dropzoneEl.ondragleave = () => dropzoneEl.classList.remove('dragover');
+  dropzoneEl.ondrop = (e) => {
+    e.preventDefault();
+    dropzoneEl.classList.remove('dragover');
+    if (e.dataTransfer.files?.length) {
+      handleFilesSelected(Array.from(e.dataTransfer.files));
+    }
+  };
+  filePickerInput.onchange = () => {
+    if (filePickerInput.files?.length) {
+      handleFilesSelected(Array.from(filePickerInput.files));
+    }
+  };
+
+  function renderFileList() {
+    fileListEl.innerHTML = '';
+    if (!selectedFiles.length) return;
+    selectedFiles.forEach((file, idx) => {
+      const row = el('div', { style: 'display:flex;align-items:center;justify-content:space-between;padding:4px 8px;background:var(--hover);border-radius:4px;margin-bottom:4px;' },
+        el('span', { text: `${idx + 1}. ${file.name} (${sizeLabel(file.size)})` }),
+        el('button', {
+          type: 'button',
+          style: 'color:var(--danger);padding:2px 6px;',
+          onclick: () => {
+            selectedFiles.splice(idx, 1);
+            renderFileList();
+          },
+        }, 'Xóa'),
+      );
+      fileListEl.append(row);
+    });
+  }
+
+  function handleFilesSelected(files) {
+    selectedFiles = [...selectedFiles, ...files];
+    renderFileList();
+  }
+
+  const importView = el('div', { class: 'hidden' },
+    dropzoneEl,
+    filePickerInput,
+    fileListEl,
+    el('div', { class: 'conv-box', style: 'margin-top:12px' },
+      field('Khổ giấy trang PDF tạo ra', pageSizeSelect),
+      field('Hướng giấy', orientSelect),
+      field('Căn lề trang', marginSelect),
+    ),
+  );
+
+  const mainContainer = el('div', {}, tabsBar, exportView, importView);
+
+  tabExport.onclick = () => {
+    activeTab = 'export';
+    tabExport.classList.add('on');
+    tabImport.classList.remove('on');
+    exportView.classList.remove('hidden');
+    importView.classList.add('hidden');
+  };
+  tabImport.onclick = () => {
+    activeTab = 'import';
+    tabImport.classList.add('on');
+    tabExport.classList.remove('on');
+    exportView.classList.add('hidden');
+    importView.classList.remove('hidden');
+  };
+
+  openDialog({
+    title: 'Trung tâm Chuyển đổi Tài liệu',
+    width: 580,
+    body: mainContainer,
+    actions: [
+      { label: 'Đóng' },
+      {
+        label: 'Thực hiện chuyển đổi',
+        primary: true,
+        run: async () => {
+          if (activeTab === 'export') {
+            if (!state.doc) {
+              alert('Hãy mở một tệp PDF trước khi xuất.');
+              return false;
+            }
+            if (selectedExportFormat === 'xlsx') {
+              await exportExcelCurrent({ separateSheets: sheetSepCheckbox.checked, pageRange: pageRangeInput.value });
+            } else if (selectedExportFormat === 'docx') {
+              await exportContent('docx');
+            } else if (selectedExportFormat === 'images') {
+              await exportImagesWithSettings({
+                format: imgFormatSelect.value,
+                dpi: Number(dpiSelect.value),
+                pageRange: pageRangeInput.value,
+              });
+            } else if (selectedExportFormat === 'txt') {
+              await exportContent(textFormatSelect.value);
+            }
+          } else {
+            if (!selectedFiles.length) {
+              alert('Hãy chọn hoặc kéo thả ít nhất 1 tệp tin.');
+              return false;
+            }
+            if (!(await confirmReplace())) return false;
+
+            const firstFile = selectedFiles[0];
+            const ext = firstFile.name.split('.').pop().toLowerCase();
+
+            if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+              await convertExcelFileToPdf(firstFile);
+            } else if (ext === 'docx') {
+              await convertDocxFileToPdf(firstFile);
+            } else {
+              const images = [];
+              for (const f of selectedFiles) {
+                const { src } = await toEmbeddableImage(f);
+                images.push({ bytes: dataUrlToBytes(src), type: src.startsWith('data:image/png') ? 'image/png' : 'image/jpeg' });
+              }
+              const pdfBytes = await imagesToPdfAdvanced(images, {
+                pageSize: pageSizeSelect.value,
+                orientation: orientSelect.value,
+                margin: Number(marginSelect.value),
+              });
+              await openBytes(pdfBytes, 'anh-chuyen-doi.pdf');
+              setStatus(`Đã tạo PDF từ ${images.length} ảnh.`);
+            }
+          }
+        },
+      },
+    ],
+  });
+}
+
 function compressDocument() {
   return withBusy('Đang giảm dung lượng…', async () => {
     const before = snap();
@@ -1958,6 +2367,221 @@ function openSanitizeDialog() {
       ? [{ label: 'Tắt làm sạch', danger: true, run: () => updateSettings({ sanitize: false }) }, { label: 'Đóng', primary: true }]
       : [{ label: 'Hủy' }, { label: 'Bật khi xuất', primary: true, run: () => { updateSettings({ sanitize: true }); setStatus('Đã bật xóa thông tin ẩn khi xuất.'); } }],
   });
+}
+
+// ---------- VET VIRAL account ----------
+
+function openExternal(url) {
+  window.open(url, '_blank', 'noopener');
+}
+
+function initials(user) {
+  const source = (user?.name || user?.email || '?').trim();
+  return source.split(/\s+/).slice(-1)[0].charAt(0).toUpperCase();
+}
+
+// Menu-bar area: bell with unread count, then the account button (or a sign-in button).
+function renderAccountArea() {
+  if (!els.accountArea) return;
+  const { user, announcements } = state.vv;
+  const unread = unreadCount(announcements);
+  els.newsCount.textContent = unread ? `${unread}` : '';
+  const bell = el('button', { class: 'icon bell', title: unread ? `Thông báo VET VIRAL (${unread} chưa đọc)` : 'Thông báo VET VIRAL', 'aria-label': 'Thông báo VET VIRAL', onclick: () => showPanel('news') },
+    icon('bell', 16),
+    unread ? el('span', { class: 'count' }, unread > 9 ? '9+' : `${unread}`) : null,
+  );
+  const wrap = el('div', { class: 'menu' });
+  if (account.signedIn) {
+    const avatarUrl = resolveVetviralUrl(user?.avatar);
+    const avatar = avatarUrl ? el('img', { class: 'avatar', src: avatarUrl, alt: '' }) : el('span', { class: 'avatar' }, initials(user));
+    wrap.append(el('button', { class: 'account-btn', title: 'Tài khoản VET VIRAL', onclick: (e) => { e.stopPropagation(); openAccountMenu(wrap); } }, avatar, el('span', { class: 'label' }, user?.name || user?.email || 'VET VIRAL')));
+  } else {
+    wrap.append(el('button', { class: 'account-btn', title: 'Đăng nhập bằng tài khoản VET VIRAL', onclick: () => runAction('login') }, el('span', { class: 'avatar' }, icon('user', 12)), el('span', { class: 'label' }, 'Đăng nhập')));
+  }
+  els.accountArea.replaceChildren(bell, wrap);
+}
+
+function openAccountMenu(wrap) {
+  const had = wrap.querySelector('.dropdown');
+  closeMenus();
+  if (had) return;
+  const { user } = state.vv;
+  const item = (iconName, label, run) => el('button', { role: 'menuitem', onclick: () => { closeMenus(); run(); } }, el('span', { class: 'dd-check' }), icon(iconName, 16), el('span', { class: 'grow' }, label));
+  wrap.append(el('div', { class: 'dropdown right', role: 'menu', onclick: (e) => e.stopPropagation() },
+    el('div', { class: 'acct-head' },
+      el('div', { class: 'name' }, user?.name || 'Tài khoản VET VIRAL'),
+      user ? el('div', { class: 'acct-sub' }, user.email) : null,
+      user ? el('div', { class: 'acct-sub' }, `Gói: ${planLabel(user)} · ${Number(user.credits ?? 0).toLocaleString('vi-VN')} điểm`) : null,
+    ),
+    item('external', 'Quản lý tài khoản trên vetviral.com', () => runAction('manageAccount')),
+    item('bell', 'Thông báo', () => runAction('news')),
+    el('div', { class: 'dd-sep' }),
+    item('logout', 'Đăng xuất', () => runAction('logout')),
+  ));
+}
+
+function renderNews() {
+  const panel = els.newsPanel;
+  panel.replaceChildren();
+  if (!account.signedIn) {
+    panel.append(
+      el('p', { class: 'lbl empty-note' }, 'Đăng nhập bằng tài khoản VET VIRAL để nhận thông báo tính năng mới và khuyến mãi. PDF Editor chỉ đọc tên, gói và thông báo; tài liệu của bạn không được gửi đi.'),
+      el('button', { class: 'primary', onclick: () => runAction('login') }, icon('user', 16), 'Đăng nhập VET VIRAL'),
+    );
+    return;
+  }
+  const { announcements, loaded } = state.vv;
+  const unread = unreadCount(announcements);
+  panel.append(el('div', { class: 'news-head' },
+    el('span', { class: 'lbl' }, unread ? `${unread} tin chưa đọc` : 'Đã đọc hết'),
+    el('span', {},
+      iconButton('refresh', 'Tải lại thông báo', () => refreshAccount()),
+      unread ? el('button', { onclick: markAllNewsRead }, 'Đọc hết') : null,
+    ),
+  ));
+  if (!loaded) {
+    panel.append(el('p', { class: 'lbl empty-note' }, 'Đang tải thông báo…'));
+    return;
+  }
+  if (!announcements.length) {
+    panel.append(el('p', { class: 'lbl empty-note' }, 'Chưa có thông báo nào.'));
+    return;
+  }
+  for (const item of announcements) panel.append(newsItem(item));
+}
+
+function newsItem(item) {
+  const image = resolveVetviralUrl(item.imageUrl);
+  const action = resolveVetviralUrl(item.actionUrl);
+  const date = item.publishAt ? new Date(item.publishAt).toLocaleDateString('vi-VN') : '';
+  return el('article', { class: `news-item${item.read ? '' : ' unread'}` },
+    el('div', { class: 'news-meta' }, item.badge ? el('span', { class: 'news-badge' }, item.badge) : null, el('span', {}, date)),
+    el('h3', {}, item.title),
+    el('p', { class: 'news-body' }, item.body),
+    image ? el('img', { src: image, alt: '', loading: 'lazy', onerror: (e) => e.target.remove() }) : null,
+    el('div', { class: 'news-actions' },
+      action ? el('a', { class: 'go', href: action, target: '_blank', rel: 'noopener', onclick: () => readAnnouncement(item) }, 'Xem chi tiết') : null,
+      item.read ? null : el('button', { onclick: () => readAnnouncement(item) }, 'Đánh dấu đã đọc'),
+      el('button', { onclick: () => dismissNews(item) }, 'Ẩn'),
+    ),
+  );
+}
+
+// Errors from the account API: an expired session signs out quietly; others go to the status bar.
+function accountFailed(err) {
+  if (isSessionExpired(err)) {
+    state.vv = { user: null, announcements: [], loaded: false };
+    setStatus('Phiên đăng nhập VET VIRAL đã hết hiệu lực. Hãy đăng nhập lại.', true);
+  } else {
+    setStatus(err.message, true);
+  }
+  renderAccountArea();
+  if (state.panel === 'news') renderNews();
+}
+
+async function refreshAccount({ silent = false } = {}) {
+  if (!account.signedIn) {
+    state.vv = { user: null, announcements: [], loaded: false };
+    renderAccountArea();
+    if (state.panel === 'news') renderNews();
+    return;
+  }
+  try {
+    const [user, announcements] = await Promise.all([account.me(), account.announcements()]);
+    state.vv = { user, announcements, loaded: true };
+  } catch (err) {
+    if (silent && !isSessionExpired(err)) return; // offline at startup: keep quiet, keep the session
+    return accountFailed(err);
+  }
+  renderAccountArea();
+  if (state.panel === 'news') renderNews();
+}
+
+async function readAnnouncement(item) {
+  if (item.read) return;
+  try {
+    await account.markRead(item.id);
+    state.vv.announcements = state.vv.announcements.map((a) => (a.id === item.id ? { ...a, read: true } : a));
+    renderAccountArea();
+    renderNews();
+  } catch (err) {
+    accountFailed(err);
+  }
+}
+
+async function dismissNews(item) {
+  try {
+    await account.dismiss(item.id);
+    state.vv.announcements = state.vv.announcements.filter((a) => a.id !== item.id);
+    renderAccountArea();
+    renderNews();
+  } catch (err) {
+    accountFailed(err);
+  }
+}
+
+async function markAllNewsRead() {
+  try {
+    await account.markAllRead();
+    state.vv.announcements = state.vv.announcements.map((a) => ({ ...a, read: true }));
+    renderAccountArea();
+    renderNews();
+  } catch (err) {
+    accountFailed(err);
+  }
+}
+
+// Sign-in with a confirmation code: show the code, the user approves on vetviral.com, this dialog
+// waits and closes by itself. Closing the dialog cancels the wait.
+async function openLoginDialog() {
+  const code = el('div', { class: 'login-code', 'aria-live': 'polite' }, '····-····');
+  const link = el('a', { class: 'button-link', href: `${VETVIRAL_URL}/connect`, target: '_blank', rel: 'noopener' }, icon('external', 16), 'Mở vetviral.com để xác nhận');
+  const status = el('p', { class: 'dlg-hint', role: 'status' }, 'Đang lấy mã…');
+  const controller = new AbortController();
+  const close = openDialog({
+    title: 'Đăng nhập bằng tài khoản VET VIRAL',
+    body: el('div', {},
+      el('p', { class: 'dlg-text' }, 'Mở vetviral.com, đăng nhập rồi bấm "Cho phép" khi thấy đúng mã dưới đây.'),
+      code,
+      link,
+      status,
+      el('p', { class: 'dlg-hint' }, 'PDF Editor chỉ đọc tên, email, gói và thông báo của bạn. Không dùng được điểm, không thanh toán, không gửi tài liệu. Thu hồi bất cứ lúc nào trong Cài đặt › Bảo mật của VET VIRAL.'),
+    ),
+    actions: [{ label: 'Hủy' }],
+    onClose: () => controller.abort(),
+  });
+  try {
+    const started = await account.startLogin(clientNameFrom(navigator.userAgent));
+    code.textContent = started.userCode;
+    link.href = started.verificationUrl;
+    status.textContent = 'Bấm nút trên. Hộp thoại này tự đóng khi bạn đã cho phép.';
+    const user = await account.waitForApproval(started, {
+      signal: controller.signal,
+      onPending: () => (status.textContent = 'Đang chờ bạn xác nhận trên vetviral.com…'),
+    });
+    state.vv = { user, announcements: [], loaded: false };
+    close();
+    renderAccountArea();
+    setStatus(`Đã đăng nhập VET VIRAL: ${user?.name || user?.email || ''}.`);
+    showPanel('news');
+    await refreshAccount();
+  } catch (err) {
+    if (err.code === 'aborted') return;
+    status.textContent = err.message;
+    status.classList.add('dlg-error');
+  }
+}
+
+async function logoutAccount() {
+  try {
+    await account.logout();
+    setStatus('Đã đăng xuất VET VIRAL.');
+  } catch {
+    setStatus('Đã đăng xuất trên máy này. Không liên lạc được VET VIRAL; bạn có thể thu hồi kết nối trong Cài đặt › Bảo mật.', true);
+  }
+  state.vv = { user: null, announcements: [], loaded: false };
+  renderAccountArea();
+  if (state.panel === 'news') renderNews();
 }
 
 // ---------- dialogs ----------
@@ -2392,6 +3016,14 @@ function onFiles(input, handler) {
 onFiles(els.pdfInput, (files) => openPdfFile(files[0]));
 onFiles(els.combineInput, combineFiles);
 onFiles(els.imagesPdfInput, createFromImages);
+onFiles(els.excelPdfInput, async ([file]) => {
+  if (!(await confirmReplace())) return;
+  await convertExcelFileToPdf(file);
+});
+onFiles(els.docxPdfInput, async ([file]) => {
+  if (!(await confirmReplace())) return;
+  await convertDocxFileToPdf(file);
+});
 onFiles(els.imageInput, async ([file]) => {
   try {
     const img = await toEmbeddableImage(file);
@@ -2488,8 +3120,15 @@ for (const id of ['rotateLeft', 'rotateRight', 'movePageUp', 'movePageDown', 'in
 }
 
 buildMenubar();
+renderAccountArea();
 buildSearchPanel();
 renderModebar();
 renderToolbar();
 renderProps();
 renderPanel();
+
+// VET VIRAL account: restore a saved session, then check announcements every 30 minutes.
+refreshAccount({ silent: true });
+setInterval(() => {
+  if (account.signedIn) refreshAccount({ silent: true });
+}, 30 * 60_000);
