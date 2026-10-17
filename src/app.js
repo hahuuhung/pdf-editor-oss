@@ -8,7 +8,11 @@
 //
 // Undo snapshots hold { boxes, marks, settings, pdfBytes }. All four are replaced, never mutated,
 // so a snapshot is just four references. Page operations produce new bytes and reload the view.
+//
+// The state lives in an EditorStore (store.js) that also carries the undo history and the events
+// the components render from; components ask for changes with intents handled at the end of this file.
 
+import { EVENTS, EditorStore } from './store.js';
 import { addBox, clampFontSize, nextId, removeBox, updateBox } from './model.js';
 import {
   MARK_DEFAULTS,
@@ -285,7 +289,7 @@ const els = {
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
 
-const state = {
+const store = new EditorStore({
   pdfBytes: null,
   doc: null, // pdf.js document for pdfBytes
   fileName: 'document.pdf',
@@ -304,8 +308,6 @@ const state = {
   theme: 'system',
   defaults: {}, // per type overrides from the properties bar
   stampLabel: STAMP_LABELS[0],
-  history: [],
-  future: [],
   gesture: null,
   panel: 'comments',
   search: { query: '', caseSensitive: false, hits: [], index: -1 },
@@ -316,7 +318,8 @@ const state = {
   showOcr: false,
   // VET VIRAL account: signed-in user and announcements (null user = not signed in or not loaded yet).
   vv: { user: null, announcements: [], loaded: false },
-};
+}, { historyLimit: HISTORY_LIMIT });
+const state = store.state;
 
 const account = new AccountClient({ storage: safeStorage() });
 
@@ -452,14 +455,11 @@ function changedSince(s) {
 }
 
 function pushHistory(before) {
-  state.history.push(before);
-  if (state.history.length > HISTORY_LIMIT) state.history.shift();
-  state.future = [];
+  store.record(before);
 }
 
 function endEdit(before) {
   if (before && changedSince(before)) pushHistory(before);
-  updateQuick();
 }
 
 async function restore(s) {
@@ -475,20 +475,20 @@ async function restore(s) {
 
 function undo() {
   if (state.busy) return;
-  if (!state.history.length) return setStatus('Không còn thao tác để hoàn tác.');
-  state.future.push(snap());
+  const target = store.undo(snap());
+  if (!target) return setStatus('Không còn thao tác để hoàn tác.');
   withBusy('Đang hoàn tác…', async () => {
-    await restore(state.history.pop());
+    await restore(target);
     setStatus('Đã hoàn tác.');
   });
 }
 
 function redo() {
   if (state.busy) return;
-  if (!state.future.length) return setStatus('Không còn thao tác để làm lại.');
-  state.history.push(snap());
+  const target = store.redo(snap());
+  if (!target) return setStatus('Không còn thao tác để làm lại.');
   withBusy('Đang làm lại…', async () => {
-    await restore(state.future.pop());
+    await restore(target);
     setStatus('Đã làm lại.');
   });
 }
@@ -583,8 +583,8 @@ function renderModebar() {
 
 function updateQuick() {
   if (!quick.undo) return;
-  quick.undo.disabled = !state.history.length;
-  quick.redo.disabled = !state.future.length;
+  quick.undo.disabled = !store.canUndo;
+  quick.redo.disabled = !store.canRedo;
   quick.save.disabled = !state.pdfBytes;
   quick.print.disabled = !state.pdfBytes;
 }
@@ -648,6 +648,7 @@ function setTool(tool) {
   state.tool = tool;
   renderToolbar();
   renderProps();
+  store.emit(EVENTS.toolChanged, { mode: state.mode, tool });
 }
 
 // ---------- zoom, navigation, rendering ----------
@@ -658,6 +659,7 @@ function setZoom(z, fit = null) {
   const label = `${Math.round(state.zoom * 100)}%`;
   els.zoominfo.textContent = label;
   els.toolbar.querySelectorAll('.zoomtxt').forEach((b) => (b.textContent = label));
+  store.emit(EVENTS.zoomChanged, { zoom: state.zoom });
   if (state.doc) scheduleRender();
 }
 
@@ -703,6 +705,7 @@ function setCurrentPage(i) {
   if (f) f.value = i + 1;
   els.thumbs.querySelectorAll('.thumb').forEach((t, k) => t.classList.toggle('on', k === i));
   els.thumbs.querySelector('.thumb.on')?.scrollIntoView({ block: 'nearest' });
+  store.emit(EVENTS.pageChanged, { index: i, count: state.pageSizes.length });
 }
 
 function updatePageFromScroll() {
@@ -992,10 +995,7 @@ function select(sel) {
     }
   }
   state.selected = sel;
-  paintSelection();
-  renderProps();
-  renderComments();
-  updateQuick();
+  store.emit(EVENTS.selectionChanged, { selected: sel });
 }
 
 function refresh() {
@@ -1583,8 +1583,9 @@ async function bakePage(index) {
 }
 
 // Replaces the document bytes as one undo step. `remap` re-indexes everything tied to a page
-// (text boxes, marks, OCR words) to follow inserted, deleted or moved pages.
-async function applyBytes(bytes, before, { remap, current } = {}) {
+// (text boxes, marks, OCR words) to follow inserted, deleted or moved pages; `order` and
+// `changed` describe the new pages for the thumbnails (see loadDocument).
+async function applyBytes(bytes, before, { remap, current, order, changed } = {}) {
   pushHistory(before);
   state.pdfBytes = bytes;
   if (remap) {
@@ -1594,7 +1595,7 @@ async function applyBytes(bytes, before, { remap, current } = {}) {
   }
   if (current !== undefined) state.current = current;
   state.selected = null;
-  await loadDocument(bytes);
+  await loadDocument(bytes, { order, changed });
 }
 
 function rotateCurrent(delta) {
@@ -1698,7 +1699,7 @@ function combineFiles(files) {
 }
 
 async function confirmReplace() {
-  if (!state.pdfBytes || !state.history.length) return true;
+  if (!state.pdfBytes || !store.canUndo) return true;
   return confirmDialog('Mở tài liệu mới?', 'Các chỉnh sửa chưa xuất của tài liệu hiện tại sẽ mất.', 'Tiếp tục');
 }
 
@@ -2875,7 +2876,9 @@ function openPalette() {
 
 // ---------- loading ----------
 
-async function loadDocument(bytes, { fresh = false } = {}) {
+// Loads `bytes` into the view. `order` (the old index of each page, -1 for a new page) and
+// `changed` (pages whose content changed) tell the thumbnails which pictures they can keep.
+async function loadDocument(bytes, { fresh = false, order = null, changed = [] } = {}) {
   const doc = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
   const old = state.doc;
   state.doc = doc;
@@ -2902,6 +2905,8 @@ async function loadDocument(bytes, { fresh = false } = {}) {
   state.current = clamp(state.current, 0, doc.numPages - 1);
   renderToolbar();
   updateQuick();
+  if (fresh) store.emit(EVENTS.loaded, { fileName: state.fileName, pageCount: doc.numPages });
+  store.emit(EVENTS.pagesUpdated, { doc, pageSizes: state.pageSizes, current: state.current, order, changed });
   buildThumbnails(doc);
   await renderDocument();
 }
@@ -2912,8 +2917,7 @@ async function openBytes(bytes, name) {
   state.boxes = [];
   state.marks = [];
   state.settings = EMPTY_SETTINGS;
-  state.history = [];
-  state.future = [];
+  store.clearHistory();
   state.selected = null;
   state.search = { query: '', caseSensitive: false, hits: [], index: -1 };
   await loadDocument(bytes, { fresh: true });
@@ -3004,6 +3008,13 @@ async function unlockPdf(bytes, name) {
 }
 
 // ---------- events ----------
+
+store.on(EVENTS.historyChanged, updateQuick);
+store.on(EVENTS.selectionChanged, () => {
+  paintSelection();
+  renderProps();
+  renderComments();
+});
 
 function onFiles(input, handler) {
   input.addEventListener('change', async () => {
