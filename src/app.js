@@ -34,7 +34,11 @@ import {
   updateMark,
   zigzagPoints,
 } from './marks.js';
-import { formatPageRange, parsePageRange, remapDeleted, remapInserted, remapMoved } from './pages.js';
+import { formatPageRange, isIdentityOrder, moveSelectionOrder, parsePageRange, remapInserted, remapOrder } from './pages.js';
+import { snapLines, snapRect } from './snap.js';
+import { boundingBox } from './geometry.js';
+import './components/thumbnail-sidebar.js';
+import './components/canvas-view.js';
 import {
   HEADER_FOOTER_SLOTS,
   batesLabel,
@@ -53,8 +57,8 @@ import {
   extractPages,
   imagesToPdf,
   insertBlankPage,
-  movePage,
   readFormFields,
+  reorderPages,
   rotatePages,
 } from './pdfops.js';
 import { rasterizeRedactions } from './redact.js';
@@ -102,6 +106,7 @@ const EMPTY_SETTINGS = Object.freeze({
 
 const TOOL_INFO = {
   select: { label: 'Chọn', icon: 'cursor' },
+  hand: { label: 'Bàn tay (kéo để cuộn trang)', icon: 'hand' },
   text: { label: 'Thêm chữ', icon: 'text' },
   date: { label: 'Ngày hôm nay', icon: 'date', type: 'text' },
   note: { label: 'Ghi chú', icon: 'note' },
@@ -324,9 +329,7 @@ const state = store.state;
 const account = new AccountClient({ storage: safeStorage() });
 
 const quick = {};
-let renderToken = 0;
 let renderTimer = null;
-let thumbToken = 0;
 let propEdit = null;
 let textEdit = null;
 let dragSnap = null;
@@ -653,9 +656,12 @@ function setTool(tool) {
 
 // ---------- zoom, navigation, rendering ----------
 
-function setZoom(z, fit = null) {
+// `anchor` (from the page view) keeps one point of a page under the same screen point.
+let zoomAnchor = null;
+function setZoom(z, fit = null, anchor = null) {
   state.zoom = clamp(z, 0.25, 4);
   state.fit = fit;
+  zoomAnchor = anchor;
   const label = `${Math.round(state.zoom * 100)}%`;
   els.zoominfo.textContent = label;
   els.toolbar.querySelectorAll('.zoomtxt').forEach((b) => (b.textContent = label));
@@ -666,7 +672,7 @@ function setZoom(z, fit = null) {
 function zoomBy(dir) {
   const z = state.zoom;
   const next = dir > 0 ? ZOOM_STEPS.find((s) => s > z + 1e-6) : [...ZOOM_STEPS].reverse().find((s) => s < z - 1e-6);
-  if (next) setZoom(next);
+  if (next) setZoom(next, null, els.view.centerAnchor());
 }
 
 function fitZoom(kind) {
@@ -703,8 +709,6 @@ function setCurrentPage(i) {
   els.pageinfo.textContent = state.pageSizes.length ? `Trang ${i + 1} / ${state.pageSizes.length}` : '';
   const f = $('page-field');
   if (f) f.value = i + 1;
-  els.thumbs.querySelectorAll('.thumb').forEach((t, k) => t.classList.toggle('on', k === i));
-  els.thumbs.querySelector('.thumb.on')?.scrollIntoView({ block: 'nearest' });
   store.emit(EVENTS.pageChanged, { index: i, count: state.pageSizes.length });
 }
 
@@ -723,48 +727,33 @@ function scheduleRender() {
   renderTimer = setTimeout(renderDocument, 60);
 }
 
-async function renderDocument() {
+// Lays out every page at the current zoom; the page view paints the canvases lazily. When only
+// the zoom changed, the old pictures stay in place (stretched) until the new ones are painted.
+let renderedDoc = null;
+function renderDocument() {
   if (!state.doc) return;
-  const token = ++renderToken;
   const doc = state.doc;
-  const dpr = window.devicePixelRatio || 1;
   const keep = state.current;
+  const old = renderedDoc === doc ? state.pageEls.map((div) => div?.querySelector('canvas')) : [];
+  renderedDoc = doc;
   els.view.replaceChildren();
   state.pageEls = [];
   for (let i = 0; i < doc.numPages; i++) {
     const size = state.pageSizes[i];
-    const canvas = el('canvas', { width: Math.floor(size.width * state.zoom * dpr), height: Math.floor(size.height * state.zoom * dpr) });
-    const div = el('div', { class: 'page', 'data-page': i, style: `width:${size.width * state.zoom}px;height:${size.height * state.zoom}px` }, canvas);
+    const div = el('div', { class: 'page', 'data-page': i, style: `width:${size.width * state.zoom}px;height:${size.height * state.zoom}px` }, old[i] ?? null);
     div.addEventListener('pointerdown', (e) => onPagePointerDown(e, i));
     els.view.append(div);
     state.pageEls[i] = div;
   }
   renderOverlays();
-  scrollToPage(keep, false);
-  // Paint canvases after the layout exists, so the view is usable while pages render.
-  for (let i = 0; i < doc.numPages; i++) {
-    const page = await doc.getPage(i + 1);
-    if (token !== renderToken) return;
-    const canvas = state.pageEls[i].querySelector('canvas');
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport: page.getViewport({ scale: state.zoom * dpr }) }).promise;
-    if (token !== renderToken) return;
-  }
-}
-
-async function buildThumbnails(doc) {
-  const token = ++thumbToken;
-  els.thumbs.replaceChildren();
-  const buttons = state.pageSizes.map((size, i) => {
-    const canvas = el('canvas', { width: 130, height: Math.round((130 * size.height) / size.width) });
-    const b = el('button', { class: `thumb${i === state.current ? ' on' : ''}`, title: `Trang ${i + 1}`, onclick: () => scrollToPage(i) }, canvas, `${i + 1}`);
-    els.thumbs.append(b);
-    return b;
-  });
-  for (let i = 0; i < doc.numPages; i++) {
-    const page = await doc.getPage(i + 1);
-    if (token !== thumbToken) return;
-    const canvas = buttons[i].querySelector('canvas');
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport: page.getViewport({ scale: 130 / state.pageSizes[i].width }) }).promise;
+  els.view.paintPages(doc, state.pageEls, state.zoom);
+  if (zoomAnchor) {
+    els.view.restoreAnchor(zoomAnchor);
+    zoomAnchor = null;
+    navTarget = null;
+    updatePageFromScroll();
+  } else {
+    scrollToPage(keep, false);
   }
 }
 
@@ -940,14 +929,27 @@ function boxElement(box) {
     select({ kind: 'box', id: box.id });
     const current = findBox(box.id);
     dragSnap = snap();
-    drag = { id: box.id, el: node, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, ox: current.x, oy: current.y, x: current.x, y: current.y, moved: false };
+    const rect = { x: current.x, y: current.y, w: node.offsetWidth / state.zoom, h: node.offsetHeight / state.zoom };
+    drag = { id: box.id, page: current.page, el: node, rect, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, ox: current.x, oy: current.y, x: current.x, y: current.y, moved: false };
     capturePointer(grip, e.pointerId);
+    cancelDrag = () => {
+      node.style.left = `${current.x * state.zoom}px`;
+      node.style.top = `${current.y * state.zoom}px`;
+      els.view.clearGuides();
+      drag = null;
+      dragSnap = null;
+      cancelDrag = null;
+    };
   });
   grip.addEventListener('pointermove', (e) => {
     if (!drag || drag.pointerId !== e.pointerId) return;
-    drag.x = drag.ox + (e.clientX - drag.startX) / state.zoom;
-    drag.y = drag.oy + (e.clientY - drag.startY) / state.zoom;
-    drag.moved = drag.moved || Math.abs(drag.x - drag.ox) > 0.5 || Math.abs(drag.y - drag.oy) > 0.5;
+    const dx = (e.clientX - drag.startX) / state.zoom;
+    const dy = (e.clientY - drag.startY) / state.zoom;
+    drag.moved = drag.moved || Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5;
+    if (!drag.moved) return;
+    const snapped = snapMove(drag.page, drag.rect, dx, dy, drag.id, e);
+    drag.x = drag.ox + snapped.dx;
+    drag.y = drag.oy + snapped.dy;
     drag.el.style.left = `${drag.x * state.zoom}px`;
     drag.el.style.top = `${drag.y * state.zoom}px`;
   });
@@ -955,8 +957,10 @@ function boxElement(box) {
     if (!drag || drag.pointerId !== e.pointerId) return;
     if (drag.moved) state.boxes = updateBox(state.boxes, drag.id, { x: drag.x, y: drag.y });
     endEdit(drag.moved ? dragSnap : null);
+    els.view.clearGuides();
     drag = null;
     dragSnap = null;
+    cancelDrag = null;
   };
   grip.addEventListener('pointerup', endDrag);
   grip.addEventListener('pointercancel', endDrag);
@@ -1153,33 +1157,83 @@ function deleteSelected() {
   refresh();
 }
 
+// ---------- smart snapping ----------
+
+const SNAP_PX = 6; // screen pixels within which a dragged item snaps to a guide
+
+// Size of a text box in page points, measured from its element; null when it is not shown.
+function boxRect(box) {
+  const node = document.querySelector(`.tbox[data-id="${box.id}"]`);
+  return node ? { x: box.x, y: box.y, w: node.offsetWidth / state.zoom, h: node.offsetHeight / state.zoom } : null;
+}
+
+// Guide lines for an item dragged on `page`: the page edges and centre, the edges and centre of
+// the other items, and of the page's text block (its margins). Text is read in the background the
+// first time, so the margins join a drag a moment after it starts.
+function snapLinesFor(page, skipId) {
+  const rects = [
+    ...state.marks.filter((m) => m.page === page && m.id !== skipId).map(markBounds),
+    ...state.boxes.filter((b) => b.page === page && b.id !== skipId).map(boxRect).filter(Boolean),
+  ];
+  if (!state.textCache.has(page) && state.doc) pdfTextItems(page).catch(() => {});
+  const text = boundingBox([
+    ...(state.textCache.get(page) ?? []).filter((t) => t.str.trim()),
+    ...state.settings.ocrWords.filter((w) => w.page === page),
+  ].map((t) => ({ x: t.x, y: t.y, w: t.w, h: t.h })));
+  if (text) rects.push(text);
+  return snapLines(state.pageSizes[page], rects);
+}
+
+// Snaps `rect` moved by (dx, dy) and shows the guides; Ctrl/⌘ held turns snapping off.
+function snapMove(page, rect, dx, dy, skipId, ev) {
+  if (ev.ctrlKey || ev.metaKey) {
+    els.view.clearGuides();
+    return { dx, dy };
+  }
+  const s = snapRect({ ...rect, x: rect.x + dx, y: rect.y + dy }, snapLinesFor(page, skipId), SNAP_PX / state.zoom);
+  els.view.showGuides(state.pageEls[page], state.pageSizes[page], s.guides);
+  return { dx: dx + s.dx, dy: dy + s.dy };
+}
+
+// The item drag in progress, cancelled when a pinch or a pan takes over the pointer.
+let cancelDrag = null;
+
 function beginMarkMove(e, id) {
   const m = findMark(id);
   if (!m || e.button !== 0) return;
   select({ kind: 'mark', id });
   const g = pageSvg(m.page)?.querySelector(`g.mark[data-id="${id}"]`);
+  const bounds = markBounds(m);
   const move = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, dx: 0, dy: 0, moved: false, before: snap() };
   const onMove = (ev) => {
     if (ev.pointerId !== move.pointerId) return;
     const rect = state.pageEls[m.page].getBoundingClientRect();
     const size = state.pageSizes[m.page];
-    move.dx = (ev.clientX - move.startX) * (size.width / rect.width);
-    move.dy = (ev.clientY - move.startY) * (size.height / rect.height);
-    move.moved = move.moved || Math.abs(move.dx) > 0.5 || Math.abs(move.dy) > 0.5;
+    const dx = (ev.clientX - move.startX) * (size.width / rect.width);
+    const dy = (ev.clientY - move.startY) * (size.height / rect.height);
+    move.moved = move.moved || Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5;
+    if (!move.moved) return;
+    ({ dx: move.dx, dy: move.dy } = snapMove(m.page, bounds, dx, dy, id, ev));
     g?.setAttribute('transform', `translate(${move.dx} ${move.dy})`);
   };
-  const onUp = (ev) => {
-    if (ev.pointerId !== move.pointerId) return;
+  const stop = () => {
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
     window.removeEventListener('pointercancel', onUp);
     g?.removeAttribute('transform');
+    els.view.clearGuides();
+    cancelDrag = null;
+  };
+  const onUp = (ev) => {
+    if (ev.pointerId !== move.pointerId) return;
+    stop();
     if (move.moved) {
       state.marks = state.marks.map((mk) => (mk.id === id ? moveMark(mk, move.dx, move.dy) : mk));
       pushHistory(move.before);
       refresh();
     }
   };
+  cancelDrag = stop;
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
   window.addEventListener('pointercancel', onUp);
@@ -1574,9 +1628,10 @@ async function buildOutput(overrides = {}) {
 }
 
 // Writes the items of one page into the PDF bytes (used before rotating that page).
-async function bakePage(index) {
-  const boxes = state.boxes.filter((b) => b.page === index);
-  const marks = state.marks.filter((m) => m.page === index);
+async function bakePage(indices) {
+  const pages = new Set(indices);
+  const boxes = state.boxes.filter((b) => pages.has(b.page));
+  const marks = state.marks.filter((m) => pages.has(m.page));
   if (!boxes.length && !marks.length) return state.pdfBytes;
   const raster = await rasterizeRedactions(state.doc, marks);
   return exportPdf(state.pdfBytes.slice(), boxes, { fontBytes: state.fontBytes, marks, rasterPages: raster });
@@ -1598,29 +1653,52 @@ async function applyBytes(bytes, before, { remap, current, order, changed } = {}
   await loadDocument(bytes, { order, changed });
 }
 
+// Pages the page commands act on: the pages selected in the thumbnails (the current page by default).
+function selectedPages() {
+  const pages = els.thumbs.selection ?? [];
+  return pages.length ? pages : [state.current];
+}
+
+const pageList = (pages) => (pages.length === 1 ? `trang ${pages[0] + 1}` : `${pages.length} trang (${formatPageRange(pages)})`);
+const keptOrder = (count) => Array.from({ length: count }, (_, i) => i);
+
 function rotateCurrent(delta) {
+  return rotateDocPages(selectedPages(), delta);
+}
+
+function rotateDocPages(pages, delta) {
   return withBusy('Đang xoay trang…', async () => {
-    const i = state.current;
+    const turned = new Set(pages);
     const before = snap();
-    const baked = state.boxes.some((b) => b.page === i) || state.marks.some((m) => m.page === i);
-    const bytes = await rotatePages(await bakePage(i), [i], delta);
-    const hadOcr = state.settings.ocrWords.some((w) => w.page === i);
-    // Items on the page were written into the PDF; OCR boxes no longer match the turned page.
-    await applyBytes(bytes, before, { remap: (items) => items.filter((it) => it.page !== i) });
-    setStatus(`Đã xoay trang ${i + 1}.${baked ? ' Các mục trên trang đã được gộp vào PDF trước khi xoay.' : ''}${hadOcr ? ' Hãy chạy lại OCR cho trang này.' : ''}`);
+    const baked = state.boxes.some((b) => turned.has(b.page)) || state.marks.some((m) => turned.has(m.page));
+    const hadOcr = state.settings.ocrWords.some((w) => turned.has(w.page));
+    const bytes = await rotatePages(await bakePage(pages), pages, delta);
+    // Items on the pages were written into the PDF; OCR boxes no longer match the turned pages.
+    await applyBytes(bytes, before, { remap: (items) => items.filter((it) => !turned.has(it.page)), order: keptOrder(state.pageSizes.length), changed: pages });
+    setStatus(`Đã xoay ${pageList(pages)}.${baked ? ' Các mục trên trang đã được gộp vào PDF trước khi xoay.' : ''}${hadOcr ? ' Hãy chạy lại OCR cho các trang này.' : ''}`);
   });
 }
 
-function moveCurrent(dir) {
-  const i = state.current;
-  const to = i + dir;
-  if (to < 0 || to >= state.pageSizes.length) return setStatus(dir < 0 ? 'Đây đã là trang đầu.' : 'Đây đã là trang cuối.');
-  return withBusy('Đang di chuyển trang…', async () => {
+// Puts the pages in `order` (the old index of the page at each new position) as one undo step.
+function reorderDocPages(order, message) {
+  if (isIdentityOrder(order)) return;
+  return withBusy('Đang sắp xếp trang…', async () => {
     const before = snap();
-    const bytes = await movePage(state.pdfBytes, i, to);
-    await applyBytes(bytes, before, { remap: (items) => remapMoved(items, i, to), current: to });
-    setStatus(`Đã chuyển trang ${i + 1} thành trang ${to + 1}.`);
+    const bytes = await reorderPages(state.pdfBytes, order);
+    await applyBytes(bytes, before, { remap: (items) => remapOrder(items, order), current: order.indexOf(state.current), order });
+    setStatus(message ?? 'Đã sắp xếp lại trang. Nhấn Ctrl+Z để hoàn tác.');
   });
+}
+
+// Moves the selected pages one place earlier (-1) or later (+1).
+function moveCurrent(dir) {
+  const pages = selectedPages();
+  const first = pages[0];
+  const last = pages[pages.length - 1];
+  if (dir < 0 && first === 0) return setStatus('Đây đã là trang đầu.');
+  if (dir > 0 && last === state.pageSizes.length - 1) return setStatus('Đây đã là trang cuối.');
+  const order = moveSelectionOrder(state.pageSizes.length, pages, dir < 0 ? first - 1 : last + 2);
+  return reorderDocPages(order, `Đã chuyển ${pageList(pages)} ${dir < 0 ? 'lên trước' : 'ra sau'}.`);
 }
 
 function insertBlankAfter() {
@@ -1630,7 +1708,9 @@ function insertBlankAfter() {
     const size = state.pageSizes[i];
     const before = snap();
     const bytes = await insertBlankPage(state.pdfBytes, at, [size.width, size.height]);
-    await applyBytes(bytes, before, { remap: (items) => remapInserted(items, at), current: at });
+    const order = keptOrder(state.pageSizes.length);
+    order.splice(at, 0, -1);
+    await applyBytes(bytes, before, { remap: (items) => remapInserted(items, at), current: at, order });
     setStatus(`Đã chèn trang trắng ở vị trí ${at + 1}.`);
   });
 }
@@ -1640,24 +1720,34 @@ function duplicateCurrent() {
     const i = state.current;
     const before = snap();
     const bytes = await duplicatePage(state.pdfBytes, i);
-    await applyBytes(bytes, before, { remap: (items) => remapInserted(items, i + 1), current: i + 1 });
+    const order = keptOrder(state.pageSizes.length);
+    order.splice(i + 1, 0, -1);
+    await applyBytes(bytes, before, { remap: (items) => remapInserted(items, i + 1), current: i + 1, order });
     setStatus(`Đã nhân bản trang ${i + 1}.`);
   });
 }
 
 function deleteCurrentPage() {
-  if (state.pageSizes.length <= 1) return setStatus('Không thể xóa trang duy nhất của tài liệu.', true);
+  return deleteDocPages(selectedPages());
+}
+
+function deleteDocPages(pages) {
+  const count = state.pageSizes.length;
+  if (pages.length >= count) return setStatus(count === 1 ? 'Không thể xóa trang duy nhất của tài liệu.' : 'Không thể xóa mọi trang của tài liệu.', true);
   return withBusy('Đang xóa trang…', async () => {
-    const i = state.current;
+    const gone = new Set(pages);
+    const order = keptOrder(count).filter((i) => !gone.has(i));
     const before = snap();
-    const bytes = await deletePages(state.pdfBytes, [i]);
-    await applyBytes(bytes, before, { remap: (items) => remapDeleted(items, i), current: Math.min(i, state.pageSizes.length - 2) });
-    setStatus(`Đã xóa trang ${i + 1}. Nhấn Ctrl+Z để hoàn tác.`);
+    const bytes = await deletePages(state.pdfBytes, pages);
+    // The view stays on the first page left at or after the current one.
+    const next = order.findIndex((old) => old >= state.current);
+    await applyBytes(bytes, before, { remap: (items) => remapOrder(items, order), current: next < 0 ? order.length - 1 : next, order });
+    setStatus(`Đã xóa ${pageList(pages)}. Nhấn Ctrl+Z để hoàn tác.`);
   });
 }
 
 function openExtractDialog() {
-  const input = el('input', { type: 'text', value: `${state.current + 1}`, placeholder: 'Ví dụ 1-3, 5', autofocus: true });
+  const input = el('input', { type: 'text', value: formatPageRange(selectedPages()), placeholder: 'Ví dụ 1-3, 5', autofocus: true });
   const error = el('p', { class: 'dlg-error' });
   openDialog({
     title: 'Trích xuất trang',
@@ -2341,14 +2431,19 @@ function openProtectDialog() {
     },
   ];
   if (state.settings.protection) actions.unshift({ label: 'Gỡ bảo vệ', danger: true, run: () => { updateSettings({ protection: null }); setStatus('Đã gỡ bảo vệ; tệp xuất ra sẽ không có mật khẩu.'); } });
+  const show = el('input', { type: 'checkbox', onchange: (e) => [user, again, owner].forEach((i) => (i.type = e.target.checked ? 'text' : 'password')) });
   openDialog({
     title: 'Đặt mật khẩu',
+    subtitle: 'Mã hóa AES-256 ngay trong trình duyệt',
+    icon: 'lock',
     body: el('div', {},
-      el('p', { class: 'dlg-hint' }, 'Mã hóa AES-256 bằng QPDF ngay trong trình duyệt. Mật khẩu chỉ giữ trong phiên làm việc này và không gửi đi đâu.'),
+      el('p', { class: 'dlg-hint' }, 'Mật khẩu chỉ giữ trong phiên làm việc này và không gửi đi đâu. Bảo vệ được áp dụng khi xuất PDF.'),
       field('Mật khẩu mở tệp', user, 'Để trống nếu chỉ muốn hạn chế quyền.'),
       field('Nhập lại', again),
       field('Mật khẩu chủ sở hữu (đổi quyền)', owner),
-      printRow, copyRow, modifyRow, error,
+      el('label', { class: 'lbl small' }, show, 'Hiện mật khẩu'),
+      el('fieldset', { class: 'dlg-group' }, el('legend', {}, 'Quyền của người mở tệp'), printRow, copyRow, modifyRow),
+      error,
     ),
     actions,
   });
@@ -2640,9 +2735,25 @@ function openWatermarkDialog() {
     },
   ];
   if (state.settings.watermark) actions.unshift({ label: 'Gỡ hình mờ', danger: true, run: () => updateSettings({ watermark: null }) });
+  // Live preview on the current page's shape, drawn the way renderDecorations draws it.
+  const { width: W, height: H } = state.pageSizes[state.current] ?? { width: 595.28, height: 841.89 };
+  const label = svgEl('text', { x: W / 2, y: H / 2, 'text-anchor': 'middle', 'dominant-baseline': 'central', class: 'deco' });
+  const preview = svgEl('svg', { class: 'dlg-preview', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Xem trước hình mờ' });
+  preview.append(svgEl('rect', { x: 0, y: 0, width: W, height: H, fill: '#fff' }), label);
+  const update = () => {
+    const wm = sanitizeWatermark({ text: text.value, fontSize: size.value, color: color.value, opacity: Number(opacity.value) / 100, angle: angle.value });
+    label.textContent = wm?.text ?? '';
+    if (!wm) return;
+    for (const [k, v] of Object.entries({ 'font-size': wm.fontSize, fill: wm.color, 'fill-opacity': wm.opacity, transform: `rotate(${-wm.angle} ${W / 2} ${H / 2})` })) label.setAttribute(k, v);
+  };
+  for (const input of [text, size, color, opacity, angle]) input.addEventListener('input', update);
+  update();
   openDialog({
     title: 'Hình mờ',
-    body: el('div', { class: 'dlg-grid' }, field('Nội dung', text), field('Cỡ chữ', size), field('Màu', color), field('Độ mờ (%)', opacity), field('Góc xoay (độ)', angle)),
+    subtitle: 'Chữ in chìm trên mọi trang khi xuất',
+    icon: 'watermark',
+    width: 520,
+    body: el('div', {}, preview, el('div', { class: 'dlg-grid' }, field('Nội dung', text), field('Cỡ chữ', size), field('Màu', color), field('Độ mờ (%)', opacity), field('Góc xoay (độ)', angle))),
     actions,
   });
 }
@@ -2816,6 +2927,9 @@ function showShortcuts() {
     ['Ctrl+K', 'Tìm công cụ và lệnh'], ['Ctrl+O', 'Mở PDF'], ['Ctrl+S', 'Xuất PDF'], ['Ctrl+P', 'In'], ['Ctrl+F', 'Tìm văn bản'],
     ['Ctrl+Z / Ctrl+Y', 'Hoàn tác / làm lại'], ['Del', 'Xóa mục đã chọn'], ['Mũi tên', 'Dịch mục 1 pt (Shift: 10 pt)'],
     ['Ctrl+ + / −', 'Phóng to / thu nhỏ'], ['Ctrl+0 / 1 / 2', '100% / vừa trang / vừa chiều rộng'], ['Esc', 'Về công cụ Chọn'],
+    ['Ctrl+lăn chuột, chụm 2 ngón', 'Phóng to tại vị trí con trỏ'], ['Space+kéo, chuột giữa, H', 'Kéo để cuộn trang (H: công cụ Bàn tay)'],
+    ['Ctrl khi kéo mục', 'Tắt bắt dính vào lề, tâm trang và mục khác'],
+    ['Danh sách trang: Ctrl/Shift+bấm', 'Chọn nhiều trang, rồi kéo thả để sắp xếp'], ['Danh sách trang: Alt+↑/↓, Del', 'Di chuyển / xóa các trang đã chọn'],
   ];
   openDialog({
     title: 'Phím tắt',
@@ -2907,8 +3021,7 @@ async function loadDocument(bytes, { fresh = false, order = null, changed = [] }
   updateQuick();
   if (fresh) store.emit(EVENTS.loaded, { fileName: state.fileName, pageCount: doc.numPages });
   store.emit(EVENTS.pagesUpdated, { doc, pageSizes: state.pageSizes, current: state.current, order, changed });
-  buildThumbnails(doc);
-  await renderDocument();
+  renderDocument();
 }
 
 async function openBytes(bytes, name) {
@@ -3015,6 +3128,20 @@ store.on(EVENTS.selectionChanged, () => {
   renderProps();
   renderComments();
 });
+// Panning or pinching takes over: drop a programmatic scroll and any drawing or drag in progress.
+store.on(EVENTS.pan, ({ active }) => {
+  if (!active) return;
+  navTarget = null;
+  if (state.gesture) cancelGesture();
+  cancelDrag?.();
+});
+
+// Intents from the thumbnails, the page view and the ribbon.
+store.handle('page:select', ({ index }) => scrollToPage(index));
+store.handle('page:reorder', ({ order }) => reorderDocPages(order));
+store.handle('page:rotate', ({ pages, delta }) => rotateDocPages(pages, delta));
+store.handle('page:delete', ({ pages }) => deleteDocPages(pages));
+store.handle('view:zoom', ({ zoom, anchor }) => setZoom(zoom, null, anchor));
 
 function onFiles(input, handler) {
   input.addEventListener('change', async () => {
@@ -3108,6 +3235,7 @@ document.addEventListener('keydown', (e) => {
     const dir = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
     if (dir) return go(() => nudgeSelected(...dir));
   }
+  if (!mod && !e.altKey && key === 'h' && state.doc) return go(() => setTool(state.tool === 'hand' ? 'select' : 'hand'));
   if (e.key === 'Escape') {
     closeMenus();
     if (state.gesture) cancelGesture();
@@ -3129,6 +3257,13 @@ for (const id of ['rotateLeft', 'rotateRight', 'movePageUp', 'movePageDown', 'in
   const a = ACTIONS[id];
   els.thumbActions.append(iconButton(a.icon, a.label, () => runAction(id)));
 }
+
+els.thumbs.store = store;
+els.view.store = store;
+store.on(EVENTS.pagesUpdated, ({ pageSizes }) => {
+  const count = document.getElementById('page-count');
+  if (count) count.textContent = pageSizes.length ? `(${pageSizes.length})` : '';
+});
 
 buildMenubar();
 renderAccountArea();

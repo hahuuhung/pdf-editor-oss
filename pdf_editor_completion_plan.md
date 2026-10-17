@@ -164,3 +164,15 @@ Bản phác thảo mô phỏng tỷ lệ thực tế, cấu trúc component, mã
 > **Rủi ro 2: Hiệu năng kéo thả Thumbnail khi tài liệu có nhiều trang (>50 trang)**
 > - *Nguy cơ*: Render lại toàn bộ 50 canvas thumbnails trong lúc drag-drop có thể gây giật lag (frame drop).
 > - *Giải pháp*: Sử dụng Virtual DOM hoặc chỉ hoán đổi vị trí thẻ DOM (`insertBefore`) thay vì re-render lại nội dung canvas; chỉ sinh thumbnail khi thẻ xuất hiện trong tầm nhìn (IntersectionObserver).
+
+---
+
+## 6. Trạng thái thực hiện (17/10/2026)
+
+| Giai đoạn | Trạng thái | Ghi chú |
+| :--- | :--- | :--- |
+| 1. Git + CLAUDE.md | Xong | |
+| 2. `editorStore` | Xong | `src/store.js`, `tests/store.test.mjs`; lịch sử hoàn tác và sự kiện đi qua store. |
+| 3. White theme + `<pdf-thumbnail-sidebar>` | Xong | Token màu trắng trong `index.html`; danh sách trang chọn nhiều (Ctrl/Shift), kéo thả với vạch chỉ báo, xoay/xóa nhanh, vẽ lười bằng IntersectionObserver, giữ hình khi sắp xếp. |
+| 4. `<pdf-canvas-view>` | Xong | Space/chuột giữa/công cụ Bàn tay/vuốt để cuộn, Ctrl+lăn và chụm hai ngón để phóng to tại con trỏ, bắt dính vào mép/tâm trang, lề chữ và mục khác (`src/snap.js`), vẽ trang lười và giới hạn điểm ảnh mỗi canvas (rủi ro 1 và 2 đã xử lý). |
+| 5. Toolbar, dialogs | Xong một phần | Thanh công cụ được thay bằng Ribbon (`src/ribbon.js`, làm riêng). Hộp thoại: tiêu đề có biểu tượng và nút đóng, giữ tiêu điểm trong hộp thoại, hình mờ có xem trước, mật khẩu có nút hiện/ẩn. |

@@ -67,6 +67,7 @@ export const ICONS = {
   refresh: '<path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/>',
   excel: '<path d="M6 3h8l4 4v14H6z"/><path d="M8.5 11l4 6M12.5 11l-4 6"/>',
   sync: '<path d="M21 12a9 9 0 00-9-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5M3 12a9 9 0 009 9 9.75 9.75 0 006.74-2.74L21 16"/><path d="M16 16h5v5"/>',
+  hand: '<path d="M8 13V5.5a1.5 1.5 0 013 0V12M11 11V4a1.5 1.5 0 013 0v7M14 11V5.5a1.5 1.5 0 013 0V14c0 4-2.5 7-6.5 7-2.5 0-4-1.2-5.5-3.5L3.2 14a1.5 1.5 0 012.5-1.6L8 15"/>',
 };
 
 export function icon(name, size = 18) {
@@ -111,20 +112,39 @@ export function isDialogOpen() {
   return !!document.querySelector('.dlg-overlay');
 }
 
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 // Opens a modal dialog. Each action's `run` may return false (or a promise of false) to keep it open.
-export function openDialog({ title, body, actions = [], width = 460, onClose }) {
+// Tab stays inside the dialog; closing it returns the focus to where it was. `icon` and `subtitle`
+// are optional extras for the header.
+export function openDialog({ title, subtitle, icon: iconName, body, actions = [], width = 460, onClose }) {
   let closed = false;
+  const returnFocus = document.activeElement;
   const close = () => {
     if (closed) return;
     closed = true;
     overlay.remove();
     document.removeEventListener('keydown', onKey, true);
     onClose?.();
+    if (returnFocus?.isConnected && !isDialogOpen()) returnFocus.focus?.({ preventScroll: true });
   };
   const onKey = (e) => {
+    if (overlay !== [...document.querySelectorAll('.dlg-overlay')].at(-1)) return; // a dialog above handles it
     if (e.key === 'Escape') {
       e.stopPropagation();
       close();
+    } else if (e.key === 'Tab') {
+      const items = [...box.querySelectorAll(FOCUSABLE)].filter((n) => n.offsetParent !== null);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !box.contains(document.activeElement))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (document.activeElement === last || !box.contains(document.activeElement))) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   };
   const buttons = actions.map((a) =>
@@ -135,15 +155,23 @@ export function openDialog({ title, body, actions = [], width = 460, onClose }) 
       },
     }, a.label),
   );
-  const box = el('div', { class: 'dlg', role: 'dialog', 'aria-modal': 'true', 'aria-label': title, style: `width:min(${width}px, calc(100vw - 32px))` },
-    el('div', { class: 'dlg-title' }, title),
+  const titleId = `dlg-title-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const box = el('div', { class: 'dlg', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId, style: `width:min(${width}px, calc(100vw - 32px))` },
+    el('div', { class: 'dlg-head' },
+      iconName ? el('span', { class: 'dlg-icon' }, icon(iconName, 18)) : null,
+      el('div', { class: 'dlg-heading' },
+        el('div', { class: 'dlg-title', id: titleId }, title),
+        subtitle ? el('div', { class: 'dlg-subtitle' }, subtitle) : null,
+      ),
+      el('button', { type: 'button', class: 'icon dlg-close', title: 'Đóng (Esc)', 'aria-label': 'Đóng', onclick: () => close() }, icon('cross', 16)),
+    ),
     el('div', { class: 'dlg-body' }, body),
     buttons.length ? el('div', { class: 'dlg-actions' }, buttons) : null,
   );
   const overlay = el('div', { class: 'dlg-overlay', onpointerdown: (e) => e.target === overlay && close() }, box);
   document.body.append(overlay);
   document.addEventListener('keydown', onKey, true);
-  (box.querySelector('[autofocus]') ?? box.querySelector('input, textarea, select') ?? buttons.at(-1))?.focus();
+  (box.querySelector('[autofocus]') ?? box.querySelector('.dlg-body input, .dlg-body textarea, .dlg-body select') ?? buttons.at(-1) ?? box.querySelector('.dlg-close'))?.focus();
   return close;
 }
 

@@ -244,20 +244,6 @@
       justify-content: space-between;
     }
     .panel-body { overflow-y: auto; flex: 1; padding: 8px; }
-    .thumb {
-      display: block;
-      width: 100%;
-      background: var(--card);
-      border: 1px solid transparent;
-      border-radius: 6px;
-      padding: 6px;
-      margin-bottom: 6px;
-      text-align: center;
-      color: var(--muted);
-    }
-    .thumb.on { border-color: var(--accent); background: var(--selected); }
-    .thumb canvas { display: block; width: 100%; height: auto; box-shadow: 0 1px 3px var(--shadow); background: #fff; }
-
     .view {
       flex: 1;
       min-width: 0;
@@ -570,6 +556,7 @@
       .view { padding: 10px; }
     }
   </style>
+  <link rel="stylesheet" href="src/components/components.css" />
 </head>
 <body>
   <header class="menubar" id="menubar">
@@ -582,13 +569,15 @@
 
   <div class="workspace">
     <aside class="panel left">
-      <div class="panel-head">Trang <span class="thumb-actions" id="thumb-actions"></span></div>
-      <div class="panel-body" id="thumbs"></div>
+      <div class="panel-head"><span>Trang <span class="badge" id="page-count"></span></span> <span class="thumb-actions" id="thumb-actions"></span></div>
+      <pdf-thumbnail-sidebar class="panel-body" id="thumbs"></pdf-thumbnail-sidebar>
     </aside>
 
-    <main class="view" id="pages">
+    <pdf-canvas-view class="view" id="pages" role="main">
       <p class="empty">Mở một file PDF để bắt đầu.</p>
-    </main>
+    </pdf-canvas-view>
+
+    <section class="start hidden" id="start" aria-label="Công cụ nhanh"></section>
 
     <aside class="panel right">
       <div class="panel-head tabbed">

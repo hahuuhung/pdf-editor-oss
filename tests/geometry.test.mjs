@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeRotation, rectViewToPdf, viewSize, viewToPdf } from '../src/geometry.js';
+import { boundingBox, normalizeRotation, rectViewToPdf, viewSize, viewToPdf } from '../src/geometry.js';
 
 // The pdf.js PageViewport transform at scale 1, used as the reference the inverse must match.
 function pdfjsTransform(rotation, box) {
@@ -41,4 +41,9 @@ test('rectViewToPdf returns a positive rectangle in PDF space', () => {
   assert.deepEqual(rectViewToPdf(0, box, 0, 0, 100, 50), { x: 10, y: 770, width: 100, height: 50 });
   const r = rectViewToPdf(90, box, 0, 0, 100, 50);
   assert.deepEqual(r, { x: 10, y: 20, width: 50, height: 100 });
+});
+
+test('boundingBox spans every rectangle, null for none', () => {
+  assert.equal(boundingBox([]), null);
+  assert.deepEqual(boundingBox([{ x: 72, y: 100, w: 200, h: 12 }, { x: 60, y: 700, w: 100, h: 10 }]), { x: 60, y: 100, w: 212, h: 610 });
 });

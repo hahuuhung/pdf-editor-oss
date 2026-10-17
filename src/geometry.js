@@ -35,3 +35,13 @@ export function rectViewToPdf(rotation, box, vx, vy, w, h) {
   const [bx, by] = viewToPdf(rotation, box, vx + w, vy + h);
   return { x: Math.min(ax, bx), y: Math.min(ay, by), width: Math.abs(bx - ax), height: Math.abs(by - ay) };
 }
+
+// Smallest rectangle { x, y, w, h } holding every rectangle in `rects`; null when there are none.
+export function boundingBox(rects) {
+  if (!rects.length) return null;
+  const x = Math.min(...rects.map((r) => r.x));
+  const y = Math.min(...rects.map((r) => r.y));
+  const right = Math.max(...rects.map((r) => r.x + r.w));
+  const bottom = Math.max(...rects.map((r) => r.y + r.h));
+  return { x, y, w: right - x, h: bottom - y };
+}
