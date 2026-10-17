@@ -4,7 +4,7 @@
 export const LIB_URLS = {
   qpdf: 'https://cdn.jsdelivr.net/npm/@neslinesli93/qpdf-wasm@0.3.0/dist/qpdf.js', // ISC, QPDF compiled to WebAssembly
   qpdfWasm: 'https://cdn.jsdelivr.net/npm/@neslinesli93/qpdf-wasm@0.3.0/dist/qpdf.wasm',
-  tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js', // Apache-2.0
+  tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js', // Apache-2.0
   jszip: 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', // MIT
   docx: 'https://cdn.jsdelivr.net/npm/docx@9.5.1/dist/index.iife.js', // MIT
   xlsx: 'https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js', // Apache-2.0

@@ -20,6 +20,6 @@ Loaded from CDN with pinned versions; see each project's license.
 - pdf.js 3.11.174 (Apache-2.0), pdf-lib 1.17.1 (MIT), @pdf-lib/fontkit 1.1.1 (MIT): always.
 - On first use only (`src/libs.js`):
   - @neslinesli93/qpdf-wasm 0.3.0 (ISC), bundling QPDF 12 (Apache-2.0): password protection, unlocking, compression.
-  - tesseract.js 6.0.1 (Apache-2.0) and its language data: OCR.
+  - tesseract.js 7.0.0 (Apache-2.0) and its language data: OCR.
   - JSZip 3.10.1 (MIT or GPL-3.0, used under MIT): image extraction archive.
   - docx 9.5.1 (MIT): Word export.
