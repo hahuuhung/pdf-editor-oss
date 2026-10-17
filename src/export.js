@@ -10,7 +10,7 @@
 import { sanitizeBox } from './model.js';
 import { NOTE_SIZE, arrowHeadPoints, ellipsePoints, markBounds, sanitizeMark, zigzagPoints } from './marks.js';
 import { normalizeRotation, rectViewToPdf, viewSize, viewToPdf } from './geometry.js';
-import { batesLabel, formatTokens, sanitizeHeaderFooter, sanitizeMeta, sanitizeWatermark } from './docsettings.js';
+import { formatTokens, headerFooterContext, sanitizeHeaderFooter, sanitizeMeta, sanitizeWatermark } from './docsettings.js';
 import { stripDiacritics } from './textlayout.js';
 
 const LINE_HEIGHT = 1.2;
@@ -359,10 +359,8 @@ export async function exportPdf(pdfBytes, boxes, { fontBytes, marks = [], settin
   const hf = sanitizeHeaderFooter(settings.headerFooter);
   const wm = sanitizeWatermark(settings.watermark);
   pages.forEach((pc, i) => {
-    if (hf) {
-      const ctx = { ...context, page: i + 1, total: pages.length, bates: batesLabel(hf.batesPrefix, hf.batesStart, hf.batesDigits, i) };
-      drawHeaderFooter(pc, hf, regular, ctx);
-    }
+    const ctx = hf && headerFooterContext(hf, i, pages.length, context);
+    if (ctx) drawHeaderFooter(pc, hf, regular, ctx);
     if (wm) drawWatermark(pc, wm, regular);
   });
 

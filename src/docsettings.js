@@ -36,9 +36,26 @@ export function sanitizeHeaderFooter(h) {
     batesPrefix: str(h.batesPrefix, 40),
     batesStart: Math.floor(num(h.batesStart, 0, 1e9, 1)),
     batesDigits: Math.floor(num(h.batesDigits, 1, 12, 6)),
+    pageStart: Math.floor(num(h.pageStart, 0, 1e6, 1)),
+    skipFirst: h.skipFirst === true,
   };
   for (const slot of HEADER_FOOTER_SLOTS) out[slot] = str(h[slot], 200);
   return HEADER_FOOTER_SLOTS.some((s) => out[s].trim()) ? out : null;
+}
+
+// Token values for the header/footer of page `index` (0-based) of `total`, or null when the page
+// gets none (the cover page with `skipFirst`). Numbering starts at `pageStart` on the first page
+// that carries a header/footer, and {total} is the last number. Bates numbers count every page.
+export function headerFooterContext(hf, index, total, base = {}) {
+  const first = hf.skipFirst ? 1 : 0;
+  if (index < first) return null;
+  const start = hf.pageStart ?? 1;
+  return {
+    ...base,
+    page: start + index - first,
+    total: start + total - first - 1,
+    bates: batesLabel(hf.batesPrefix, hf.batesStart, hf.batesDigits, index),
+  };
 }
 
 export function sanitizeMeta(m) {

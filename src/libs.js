@@ -9,6 +9,7 @@ export const LIB_URLS = {
   docx: 'https://cdn.jsdelivr.net/npm/docx@9.5.1/dist/index.iife.js', // MIT
   xlsx: 'https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js', // Apache-2.0
   mammoth: 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js', // BSD-2-Clause
+  unicodeFont: 'https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans.ttf', // Bitstream Vera / DejaVu license (free)
 };
 
 const loading = new Map();

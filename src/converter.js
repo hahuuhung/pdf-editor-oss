@@ -3,6 +3,8 @@
 // 100% Client-side in browser; heavy external libraries (SheetJS, Mammoth, JSZip) are lazy-loaded.
 
 import { LIB_URLS, loadScript } from './libs.js';
+import { toWinAnsi } from './fonts.js';
+import { fitText, wrapText } from './textlayout.js';
 
 // ---------- Pure Helper Functions (Unit-Testable in Node & Browser) ----------
 
@@ -302,108 +304,104 @@ export async function exportPagesToImages(
   };
 }
 
+// Fonts for a generated PDF. With Unicode font bytes every character is kept; without them Helvetica
+// is used and the text is reduced to what it can write (Vietnamese accents are dropped).
+async function embedFonts(pdfDoc, fontBytes) {
+  const { StandardFonts } = globalThis.PDFLib;
+  const oneLine = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
+  if (fontBytes) {
+    pdfDoc.registerFontkit(globalThis.fontkit);
+    const font = await pdfDoc.embedFont(fontBytes, { subset: true });
+    return { font, bold: font, clean: oneLine };
+  }
+  return {
+    font: await pdfDoc.embedFont(StandardFonts.Helvetica),
+    bold: await pdfDoc.embedFont(StandardFonts.HelveticaBold),
+    clean: (s) => toWinAnsi(oneLine(s)),
+  };
+}
+
+const A4 = [595.28, 841.89];
+
 /**
- * Converts Excel (.xlsx, .xls, .csv) data into a multi-page formatted PDF table.
+ * Converts every non-empty sheet of an Excel (.xlsx, .xls, .csv) file into PDF tables. Column widths
+ * follow the content, wide sheets are laid out landscape, the header row repeats on each page and
+ * numbers are right-aligned.
  * @param {ArrayBuffer|Uint8Array} fileData Excel file bytes
- * @param {Object} options { title }
+ * @param {Object} options { title, loadFont(texts) -> Promise<Uint8Array|null> for Unicode text }
  */
-export async function excelToPdf(fileData, { title = 'Bảng tính Excel' } = {}) {
+export async function excelToPdf(fileData, { title = 'Bảng tính Excel', loadFont = null } = {}) {
   await loadScript(LIB_URLS.xlsx);
   const XLSX = globalThis.XLSX;
   if (!XLSX) throw new Error('Không tải được thư viện đọc Excel.');
-
-  const wb = XLSX.read(fileData, { type: 'array' });
-  const firstSheetName = wb.SheetNames[0];
-  if (!firstSheetName) throw new Error('Tệp Excel không có trang tính (sheet) nào.');
-
-  const ws = wb.Sheets[firstSheetName];
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-  if (!rows || !rows.length) throw new Error('Trang tính trống, không có dữ liệu để chuyển sang PDF.');
-
   const PDFLib = globalThis.PDFLib;
   if (!PDFLib) throw new Error('Thư viện PDFLib chưa sẵn sàng.');
 
+  const wb = XLSX.read(fileData, { type: 'array' });
+  const sheets = wb.SheetNames.map((name) => ({
+    name,
+    rows: XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '', raw: false }).filter((r) => r.some((c) => String(c).trim())),
+  })).filter((s) => s.rows.length);
+  if (!sheets.length) throw new Error('Bảng tính trống, không có dữ liệu để chuyển sang PDF.');
+
+  const fontBytes = (await loadFont?.([title, ...sheets.flatMap((s) => [s.name, ...s.rows.flat()])])) ?? null;
   const pdfDoc = await PDFLib.PDFDocument.create();
-  const font = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
-  const boldFont = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+  pdfDoc.setTitle(title);
+  const { font, bold, clean } = await embedFonts(pdfDoc, fontBytes);
 
-  // A4 dimensions in points
-  const pageWidth = 595.28;
-  const pageHeight = 841.89;
+  const MAX_COLS = 12;
   const margin = 36;
-  const usableWidth = pageWidth - 2 * margin;
+  const rowHeight = 18;
+  const fontSize = 8.5;
+  const pad = 4;
+  const ink = PDFLib.rgb(0.15, 0.15, 0.17);
+  const grid = PDFLib.rgb(0.85, 0.85, 0.88);
 
-  const numCols = Math.max(...rows.map((r) => r.length));
-  if (numCols === 0) throw new Error('Không tìm thấy cột dữ liệu hợp lệ.');
+  for (const sheet of sheets) {
+    const allCols = Math.max(...sheet.rows.map((r) => r.length));
+    const numCols = Math.min(MAX_COLS, allCols);
+    const rows = sheet.rows.map((r) => Array.from({ length: numCols }, (_, c) => clean(r[c])));
+    const [pageWidth, pageHeight] = numCols > 6 ? [A4[1], A4[0]] : A4;
+    const usable = pageWidth - 2 * margin;
+    const chars = calculateColumnWidths(rows, { minWidth: 4, maxWidth: 40 });
+    const sum = chars.reduce((a, b) => a + b, 0);
+    const widths = chars.map((c) => (usable * c) / sum);
+    const xs = widths.reduce((acc, w) => [...acc, acc.at(-1) + w], [margin]);
+    const omitted = allCols > numCols ? ` (${numCols}/${allCols} cột đầu)` : '';
+    const heading = clean(`${sheets.length > 1 ? `${title} — ${sheet.name}` : title}${omitted}`);
 
-  const colWidth = usableWidth / Math.min(numCols, 10); // max 10 visible columns per page
-  const rowHeight = 22;
-  const fontSize = 9;
+    let page;
+    let y;
+    const drawRow = (cells, isHeader) => {
+      const top = y;
+      if (isHeader) page.drawRectangle({ x: margin, y: top - rowHeight, width: usable, height: rowHeight, color: PDFLib.rgb(0.95, 0.96, 0.98) });
+      page.drawLine({ start: { x: margin, y: top - rowHeight }, end: { x: margin + usable, y: top - rowHeight }, thickness: 0.5, color: grid });
+      for (let c = 0; c < numCols; c++) {
+        const f = isHeader ? bold : font;
+        const text = fitText(cells[c], widths[c] - 2 * pad, (s) => f.widthOfTextAtSize(s, fontSize));
+        if (!text) continue;
+        const tw = f.widthOfTextAtSize(text, fontSize);
+        const numeric = !isHeader && detectCellType(cells[c]).type === 'n';
+        page.drawText(text, { x: numeric ? xs[c + 1] - pad - tw : xs[c] + pad, y: top - rowHeight + 6, size: fontSize, font: f, color: ink });
+      }
+      y -= rowHeight;
+    };
+    const newPage = (withHeading) => {
+      page = pdfDoc.addPage([pageWidth, pageHeight]);
+      y = pageHeight - margin;
+      if (withHeading) {
+        page.drawText(fitText(heading, usable, (s) => bold.widthOfTextAtSize(s, 13)), { x: margin, y: y - 13, size: 13, font: bold, color: ink });
+        y -= 26;
+      }
+      page.drawLine({ start: { x: margin, y }, end: { x: margin + usable, y }, thickness: 0.5, color: grid });
+      drawRow(rows[0], true);
+    };
 
-  let currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
-  let currentY = pageHeight - margin - 30;
-
-  // Title
-  currentPage.drawText(title, {
-    x: margin,
-    y: pageHeight - margin - 15,
-    size: 14,
-    font: boldFont,
-    color: PDFLib.rgb(0.1, 0.1, 0.1),
-  });
-
-  const drawRow = (page, rowData, yPos, isHeader = false) => {
-    // Header background
-    if (isHeader) {
-      page.drawRectangle({
-        x: margin,
-        y: yPos - 5,
-        width: usableWidth,
-        height: rowHeight,
-        color: PDFLib.rgb(0.93, 0.94, 0.96),
-      });
+    newPage(true);
+    for (let r = 1; r < rows.length; r++) {
+      if (y - rowHeight < margin) newPage(false);
+      drawRow(rows[r], false);
     }
-
-    // Border line bottom
-    page.drawLine({
-      start: { x: margin, y: yPos - 5 },
-      end: { x: margin + usableWidth, y: yPos - 5 },
-      thickness: 0.5,
-      color: PDFLib.rgb(0.8, 0.8, 0.8),
-    });
-
-    for (let c = 0; c < Math.min(rowData.length, 10); c++) {
-      const cellText = String(rowData[c] ?? '').trim().slice(0, 30);
-      if (!cellText) continue;
-
-      page.drawText(cellText, {
-        x: margin + c * colWidth + 4,
-        y: yPos + 4,
-        size: fontSize,
-        font: isHeader ? boldFont : font,
-        color: PDFLib.rgb(0.15, 0.15, 0.15),
-      });
-    }
-  };
-
-  // Draw Header
-  const headerRow = rows[0];
-  drawRow(currentPage, headerRow, currentY, true);
-  currentY -= rowHeight;
-
-  // Draw Body Rows
-  for (let r = 1; r < rows.length; r++) {
-    if (currentY <= margin + rowHeight) {
-      // New Page
-      currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
-      currentY = pageHeight - margin - 20;
-      // Re-draw header on next page
-      drawRow(currentPage, headerRow, currentY, true);
-      currentY -= rowHeight;
-    }
-
-    drawRow(currentPage, rows[r], currentY, false);
-    currentY -= rowHeight;
   }
 
   return pdfDoc.save();
@@ -477,72 +475,115 @@ export async function imagesToPdfAdvanced(
   return doc.save();
 }
 
+// Block structure of mammoth's HTML: headings, paragraphs, list items (with depth and marker) and
+// table rows, each with plain text. Browser only (DOMParser).
+function htmlBlocks(html) {
+  const body = new DOMParser().parseFromString(html, 'text/html').body;
+  const text = (n) => n.textContent.replace(/\s+/g, ' ').trim();
+  const blocks = [];
+  const walkList = (list, depth) => {
+    let n = 0;
+    for (const li of list.children) {
+      if (li.tagName !== 'LI') continue;
+      n++;
+      const own = li.cloneNode(true);
+      own.querySelectorAll('ul, ol').forEach((l) => l.remove());
+      blocks.push({ kind: 'item', depth, marker: list.tagName === 'OL' ? `${n}.` : '•', text: text(own) });
+      for (const sub of li.children) if (sub.tagName === 'UL' || sub.tagName === 'OL') walkList(sub, depth + 1);
+    }
+  };
+  const walk = (node) => {
+    for (const child of node.children) {
+      const tag = child.tagName;
+      if (/^H[1-6]$/.test(tag)) blocks.push({ kind: 'heading', level: Number(tag[1]), text: text(child) });
+      else if (tag === 'P') blocks.push({ kind: 'para', text: text(child) });
+      else if (tag === 'UL' || tag === 'OL') walkList(child, 0);
+      else if (tag === 'TABLE') {
+        for (const tr of child.querySelectorAll('tr')) blocks.push({ kind: 'row', cells: [...tr.children].map(text) });
+        blocks.push({ kind: 'gap' });
+      } else walk(child);
+    }
+  };
+  walk(body);
+  return blocks.filter((b) => b.kind === 'gap' || (b.text ?? b.cells.join('')).trim());
+}
+
+const HEADING_SIZES = { 1: 18, 2: 15, 3: 13, 4: 12, 5: 11.5, 6: 11 };
+
 /**
- * Converts Word (.docx) file data to PDF using Mammoth to parse structure and pdf-lib to render.
+ * Converts Word (.docx) to PDF: Mammoth reads the document structure, pdf-lib lays it out on A4 with
+ * headings, paragraphs wrapped by measured width, bulleted and numbered lists, and tables.
+ * Images and inline styles (bold, colours) are not carried over.
+ * @param {Object} options { title, loadFont(texts) -> Promise<Uint8Array|null> for Unicode text }
  */
-export async function docxToPdf(fileData, { title = 'Tài liệu Word' } = {}) {
+export async function docxToPdf(fileData, { title = 'Tài liệu Word', loadFont = null } = {}) {
   await loadScript(LIB_URLS.mammoth);
   const mammoth = globalThis.mammoth;
   if (!mammoth) throw new Error('Không tải được thư viện Mammoth để đọc Word.');
 
-  const result = await mammoth.extractRawText({ arrayBuffer: fileData });
-  const rawText = result.value || '';
-  if (!rawText.trim()) throw new Error('Tài liệu Word không có văn bản hoặc nội dung được bảo vệ.');
+  const { value: html } = await mammoth.convertToHtml({ arrayBuffer: fileData });
+  const blocks = htmlBlocks(html || '');
+  if (!blocks.some((b) => b.kind !== 'gap')) throw new Error('Tài liệu Word không có văn bản hoặc nội dung được bảo vệ.');
 
   const PDFLib = globalThis.PDFLib;
+  const fontBytes = (await loadFont?.([title, ...blocks.flatMap((b) => b.cells ?? [b.text ?? ''])])) ?? null;
   const pdfDoc = await PDFLib.PDFDocument.create();
-  const font = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
-  const boldFont = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+  pdfDoc.setTitle(title);
+  const { font, bold, clean } = await embedFonts(pdfDoc, fontBytes);
 
-  const pageWidth = 595.28;
-  const pageHeight = 841.89;
-  const margin = 40;
-  const usableWidth = pageWidth - 2 * margin;
-  const lineHeight = 16;
-  const fontSize = 10;
+  const [pageWidth, pageHeight] = A4;
+  const margin = 56;
+  const usable = pageWidth - 2 * margin;
+  const bodySize = 10.5;
+  const ink = PDFLib.rgb(0.13, 0.13, 0.16);
+  const headingInk = PDFLib.rgb(0.09, 0.2, 0.42);
+  const grid = PDFLib.rgb(0.8, 0.8, 0.84);
 
-  const lines = rawText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  let page = pdfDoc.addPage(A4);
+  let y = pageHeight - margin;
+  const ensure = (h) => {
+    if (y - h >= margin) return;
+    page = pdfDoc.addPage(A4);
+    y = pageHeight - margin;
+  };
+  const lines = (s, f, size, width) => wrapText(clean(s), width, (t) => f.widthOfTextAtSize(t, size));
 
-  let currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
-  let currentY = pageHeight - margin - 20;
-
-  // Title
-  currentPage.drawText(title, {
-    x: margin,
-    y: currentY,
-    size: 14,
-    font: boldFont,
-    color: PDFLib.rgb(0.1, 0.1, 0.1),
-  });
-  currentY -= 30;
-
-  for (const line of lines) {
-    if (currentY <= margin + lineHeight) {
-      currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
-      currentY = pageHeight - margin - 20;
+  for (const b of blocks) {
+    if (b.kind === 'gap') {
+      y -= 8;
+      continue;
     }
-
-    // Rough wrap for long lines
-    const maxChars = Math.floor(usableWidth / 5.5);
-    let remaining = line.trim();
-    while (remaining.length > 0) {
-      if (currentY <= margin + lineHeight) {
-        currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
-        currentY = pageHeight - margin - 20;
-      }
-      const chunk = remaining.slice(0, maxChars);
-      remaining = remaining.slice(maxChars);
-
-      currentPage.drawText(chunk, {
-        x: margin,
-        y: currentY,
-        size: fontSize,
-        font: font,
-        color: PDFLib.rgb(0.2, 0.2, 0.2),
+    if (b.kind === 'row') {
+      const cols = Math.max(1, b.cells.length);
+      const cw = usable / cols;
+      const cellLines = b.cells.map((c) => lines(c, font, 9.5, cw - 8));
+      const h = Math.max(1, ...cellLines.map((l) => l.length)) * 13 + 8;
+      ensure(h);
+      cellLines.forEach((ls, c) => {
+        const x = margin + c * cw;
+        page.drawRectangle({ x, y: y - h, width: cw, height: h, borderColor: grid, borderWidth: 0.5 });
+        ls.forEach((t, k) => page.drawText(t, { x: x + 4, y: y - 14 - k * 13, size: 9.5, font, color: ink }));
       });
-      currentY -= lineHeight;
+      y -= h;
+      continue;
     }
-    currentY -= 4; // paragraph spacing
+    const heading = b.kind === 'heading';
+    const size = heading ? HEADING_SIZES[b.level] ?? 11 : bodySize;
+    const f = heading ? bold : font;
+    const lh = size * 1.4;
+    const indent = b.kind === 'item' ? 14 + b.depth * 16 : 0;
+    const textLines = lines(b.text, f, size, usable - indent - (b.kind === 'item' ? 12 : 0));
+    if (heading) {
+      y -= 8;
+      ensure(lh * Math.min(2, textLines.length) + lh); // keep a heading with the text after it
+    }
+    textLines.forEach((t, k) => {
+      ensure(lh);
+      if (k === 0 && b.kind === 'item') page.drawText(clean(b.marker), { x: margin + indent - 12, y: y - size, size, font, color: ink });
+      page.drawText(t, { x: margin + indent + (b.kind === 'item' ? 2 : 0), y: y - size, size, font: f, color: heading ? headingInk : ink });
+      y -= lh;
+    });
+    y -= heading ? 4 : b.kind === 'item' ? 2 : 6;
   }
 
   return pdfDoc.save();

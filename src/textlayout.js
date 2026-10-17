@@ -45,14 +45,50 @@ export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
-// pages: [[line, line, …], …]
-export function pagesToText(pages) {
-  return pages.map((lines, i) => `--- Trang ${i + 1} ---\n${lines.join('\n')}`).join('\n\n') + '\n';
+// Splits `text` into lines no wider than `maxWidth`, breaking between words; `measure(s)` gives the
+// width of a string. A word longer than a whole line is cut between characters.
+export function wrapText(text, maxWidth, measure) {
+  const lines = [];
+  let line = '';
+  for (let word of String(text ?? '').split(/\s+/).filter(Boolean)) {
+    const joined = line ? `${line} ${word}` : word;
+    if (measure(joined) <= maxWidth) {
+      line = joined;
+      continue;
+    }
+    if (line) lines.push(line);
+    while (word.length > 1 && measure(word) > maxWidth) {
+      let k = word.length - 1;
+      while (k > 1 && measure(word.slice(0, k)) > maxWidth) k--;
+      lines.push(word.slice(0, k));
+      word = word.slice(k);
+    }
+    line = word;
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
-export function pagesToHtml(title, pages) {
+// `text` shortened with an ellipsis so that it fits in `maxWidth`.
+export function fitText(text, maxWidth, measure, ellipsis = '…') {
+  const s = String(text ?? '');
+  if (measure(s) <= maxWidth) return s;
+  let k = s.length - 1;
+  while (k > 0 && measure(s.slice(0, k) + ellipsis) > maxWidth) k--;
+  return k > 0 ? s.slice(0, k) + ellipsis : '';
+}
+
+// pages: [[line, line, …], …]; `numbers` gives each page's number when only some pages are exported.
+export function pagesToText(pages, numbers = null) {
+  return pages.map((lines, i) => `--- Trang ${numbers?.[i] ?? i + 1} ---\n${lines.join('\n')}`).join('\n\n') + '\n';
+}
+
+export function pagesToHtml(title, pages, numbers = null) {
   const body = pages
-    .map((lines, i) => `<section id="trang-${i + 1}">\n<h2>Trang ${i + 1}</h2>\n${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join('\n')}\n</section>`)
+    .map((lines, i) => {
+      const n = numbers?.[i] ?? i + 1;
+      return `<section id="trang-${n}">\n<h2>Trang ${n}</h2>\n${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join('\n')}\n</section>`;
+    })
     .join('\n');
   return `<!doctype html>
 <html lang="vi">

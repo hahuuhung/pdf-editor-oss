@@ -36,6 +36,55 @@ export async function movePage(bytes, from, to) {
   return doc.save();
 }
 
+// Puts the pages in a new order: order[k] is the old index of the page that goes to position k.
+// Pages move inside the same document, so form fields, bookmarks and metadata are kept.
+export async function reorderPages(bytes, order) {
+  const doc = await load(bytes);
+  const n = doc.getPageCount();
+  if (order.length !== n || new Set(order).size !== n || order.some((i) => !Number.isInteger(i) || i < 0 || i >= n)) {
+    throw new Error('Thứ tự trang không hợp lệ.');
+  }
+  const pages = doc.getPages();
+  const positions = [...pages.keys()]; // old index of the page at each position
+  order.forEach((from, k) => {
+    const at = positions.indexOf(from);
+    if (at === k) return;
+    doc.removePage(at);
+    doc.insertPage(k, pages[from]);
+    positions.splice(at, 1);
+    positions.splice(k, 0, from);
+  });
+  return doc.save();
+}
+
+// Crop box and rotation of every page, in PDF space.
+export async function pageBoxes(bytes) {
+  const doc = await load(bytes);
+  return doc.getPages().map((p) => {
+    const b = p.getCropBox();
+    return { box: { x: b.x, y: b.y, width: b.width, height: b.height }, rotation: p.getRotation().angle };
+  });
+}
+
+// Sets new crop boxes: `boxes` maps a page index to { x, y, width, height } in PDF space.
+export async function cropPages(bytes, boxes) {
+  const doc = await load(bytes);
+  for (const [i, b] of boxes) doc.getPage(i).setCropBox(b.x, b.y, b.width, b.height);
+  return doc.save();
+}
+
+// One document with every page of each file in `list`, in order. The first file is the base, so
+// its form fields, bookmarks and properties are kept.
+export async function mergePdfs(list) {
+  if (!list.length) throw new Error('Chưa có tệp nào để gộp.');
+  const doc = await load(list[0]);
+  for (const other of list.slice(1)) {
+    const src = await load(other);
+    for (const page of await doc.copyPages(src, src.getPageIndices())) doc.addPage(page);
+  }
+  return doc.save();
+}
+
 export async function duplicatePage(bytes, index) {
   const doc = await load(bytes);
   const [copy] = await doc.copyPages(doc, [index]);
