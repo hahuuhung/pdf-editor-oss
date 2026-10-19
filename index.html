@@ -2,7 +2,10 @@
 <html lang="vi">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#1b1b1e" media="(prefers-color-scheme: dark)" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%232563eb'/%3E%3Cpath d='M8 6h6l3 3v9H8z' fill='none' stroke='white' stroke-width='1.8' stroke-linejoin='round'/%3E%3C/svg%3E" />
   <title>PDF Editor</title>
   <style>
     /* Light tokens are the project's white theme (CLAUDE.md); dark tokens follow the palette of
@@ -143,21 +146,6 @@
     .sep { width: 1px; height: 22px; background: var(--divider); margin: 0 6px; flex: none; }
     .lbl { color: var(--muted); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 
-    /* Menu bar */
-    .menubar {
-      display: flex;
-      align-items: center;
-      gap: 2px;
-      height: 32px;
-      padding: 0 8px;
-      background: var(--titlebar);
-      border-bottom: 1px solid var(--border);
-      position: relative;
-      z-index: 30;
-    }
-    .brand { font-weight: 600; margin-right: 10px; color: var(--text); }
-    .menu { position: relative; }
-    .menu > button { padding: 4px 9px; color: var(--text); }
     .dropdown {
       position: absolute;
       top: calc(100% + 4px);
@@ -179,52 +167,6 @@
     }
     .dropdown .key { color: var(--faint); font-size: 12px; }
     .dropdown .sub { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 6px 10px 2px; }
-
-    /* Mode bar: one tab per mode, each with its hue */
-    .modebar {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      height: 44px;
-      padding: 0 10px;
-      background: var(--chrome);
-      border-bottom: 1px solid var(--divider);
-    }
-    .mode {
-      padding: 6px 12px;
-      border-radius: 6px;
-      color: var(--muted);
-      position: relative;
-    }
-    .mode.on { color: var(--text); background: var(--selected); }
-    .mode.on::after {
-      content: "";
-      position: absolute;
-      left: 10px;
-      right: 10px;
-      bottom: -9px;
-      height: 3px;
-      border-radius: 3px;
-      background: var(--hue);
-    }
-    .modebar .grow { flex: 1; }
-
-    /* Toolbar (tools for the active mode, plus view controls) */
-    .toolbar {
-      display: flex;
-      align-items: center;
-      gap: 2px;
-      height: 42px;
-      padding: 0 10px;
-      background: var(--chrome);
-      border-bottom: 1px solid var(--divider);
-      overflow-x: auto;
-      white-space: nowrap;
-    }
-    .toolbar .grow { flex: 1; min-width: 12px; }
-    .tool { width: 32px; height: 32px; justify-content: center; padding: 0; }
-    .tool.on { color: var(--accent-text); }
-    .zoomtxt { min-width: 52px; text-align: center; color: var(--text); }
 
     /* Properties bar */
     .propsbar {
@@ -347,41 +289,11 @@
     }
     .c-item .body { margin-top: 6px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
 
-    /* Status bar */
-    .statusbar {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      height: 26px;
-      padding: 0 12px;
-      background: var(--titlebar);
-      border-top: 1px solid var(--border);
-      color: var(--muted);
-      font-size: 12px;
-    }
-    .statusbar #status { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .statusbar #status.error { color: var(--danger); }
-
     /* Menus: check column, icon, label, shortcut */
     .dropdown button { justify-content: flex-start; gap: 8px; }
     .dropdown .grow { flex: 1; text-align: left; }
     .dd-check { width: 12px; color: var(--accent-text); }
     .dd-sep { height: 1px; background: var(--divider); margin: 4px 6px; }
-    .menubar .grow { flex: 1; }
-    .search-cmd {
-      color: var(--muted);
-      background: var(--field);
-      border: 1px solid var(--border);
-      height: 24px;
-      padding: 0 8px;
-      font-size: 12px;
-    }
-    .search-cmd .key { margin-left: 12px; color: var(--faint); }
-
-    /* Toolbar action buttons show a label */
-    .act { height: 32px; color: var(--text); }
-    .act span { font-size: 12.5px; }
-
     /* Side panels */
     .panel-head .tabs { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
     .panel-head.tabbed { padding: 6px 8px; }
@@ -628,14 +540,11 @@
     }
   </style>
   <link rel="stylesheet" href="src/components/components.css" />
+  <link rel="stylesheet" href="src/ribbon.css" />
 </head>
 <body>
-  <header class="menubar" id="menubar">
-    <span class="brand">PDF Editor</span>
-  </header>
-
-  <nav class="modebar" id="modebar"></nav>
-  <div class="toolbar" id="toolbar"></div>
+  <header class="rb-titlebar" id="titlebar"></header>
+  <div class="rb-ribbon" id="ribbon"></div>
   <div class="propsbar hidden" id="propsbar"></div>
 
   <div class="workspace">
@@ -668,10 +577,8 @@
     </aside>
   </div>
 
-  <footer class="statusbar">
+  <footer class="statusbar" id="statusbar">
     <span id="status" role="status" aria-live="polite">Chưa mở file.</span>
-    <span id="pageinfo"></span>
-    <span id="zoominfo"></span>
   </footer>
 
   <input type="file" id="pdf-input" accept="application/pdf,.pdf" hidden />

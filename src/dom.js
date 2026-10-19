@@ -76,6 +76,16 @@ export const ICONS = {
   bookmark: '<path d="M6 3h12v18l-6-4.5L6 21z"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5M4 15v5h16v-5"/>',
   hand: '<path d="M8 13V5.5a1.5 1.5 0 013 0V12M11 11V4a1.5 1.5 0 013 0v7M14 11V5.5a1.5 1.5 0 013 0V14c0 4-2.5 7-6.5 7-2.5 0-4-1.2-5.5-3.5L3.2 14a1.5 1.5 0 012.5-1.6L8 15"/>',
+  chevronDown: '<path d="M6 9l6 6 6-6"/>',
+  chevronUp: '<path d="M6 15l6-6 6 6"/>',
+  pin: '<path d="M12 5v14M5 12h14"/>',
+  ribbon: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18"/>',
+  ribbonSimple: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/>',
+  panelLeft: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+  panelRight: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
+  comments: '<path d="M4 4h16v12H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
+  swap: '<path d="M7 4v16M3.5 16.5L7 20l3.5-3.5M17 20V4M13.5 7.5L17 4l3.5 3.5"/>',
+  pencil: '<path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/>',
 };
 
 export function icon(name, size = 18) {

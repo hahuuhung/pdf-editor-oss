@@ -6,17 +6,30 @@ Trình chỉnh sửa PDF chạy hoàn toàn trong trình duyệt. Tệp của b�
 
 ## Tính năng
 
-| Chế độ | Có gì |
+Các chức năng được gom theo **ribbon** (kiểu Office): mỗi tab một lĩnh vực, trong tab chia nhóm có nhãn.
+
+| Tab ribbon | Có gì |
 |---|---|
-| Đọc | Phóng to/thu nhỏ, vừa trang, tìm kiếm văn bản (Ctrl+F), mục lục (bookmark) bấm để nhảy trang, in |
+| Trang đầu, Xem | Các lệnh hay dùng; phóng to/thu nhỏ, vừa trang, tìm kiếm văn bản (Ctrl+F), mục lục (bookmark) bấm để nhảy trang, in |
 | Chú thích | Ghi chú, tô sáng, gạch chân/ngang/sóng, hình chữ nhật, elip, đường, mũi tên, vẽ tự do, con dấu |
 | Chỉnh sửa | Thêm chữ, chèn ảnh, liên kết, hình mờ, đầu/chân trang và số Bates, thuộc tính tài liệu |
 | Trang | Kéo thả hình thu nhỏ để sắp xếp (chọn nhiều trang bằng Ctrl/Shift), nút xoay/xóa nhanh trên từng trang, chèn trang trắng, nhân bản, trích xuất, tách PDF (mỗi trang, mỗi N trang, theo dãy), gộp nhiều PDF và đổi thứ tự, cắt lề (cố định hoặc tự động theo nội dung), đánh số trang (số bắt đầu, bỏ trang bìa), xuất PNG |
 | Ký & điền | Chữ ký vẽ tay, dấu tích/chéo/chấm, ngày, điền biểu mẫu có sẵn |
-| Chuyển đổi | OCR tiếng Việt và tiếng Anh, xuất Word/Excel/TXT/HTML/ảnh, tạo PDF từ Word (giữ tiêu đề, danh sách, bảng), Excel (mọi sheet, bảng rộng xoay ngang) và ảnh, tách ảnh (.zip), giảm dung lượng |
+| Chuyển đổi | OCR tiếng Việt chuẩn (xem [docs/ocr-vietnamese.md](docs/ocr-vietnamese.md)) và tiếng Anh, xuất Word/Excel/TXT/HTML/ảnh, tạo PDF từ Word (giữ tiêu đề, danh sách, bảng), Excel (mọi sheet, bảng rộng xoay ngang) và ảnh, tách ảnh (.zip), giảm dung lượng |
 | Bảo vệ | Che thông tin thật (xóa nội dung bên dưới), đặt mật khẩu AES-256, mở tệp có mật khẩu, gỡ mật khẩu, xóa thông tin ẩn |
 
 Thêm: màn hình khởi động với **Công cụ nhanh** (gộp, tách, nén, chuyển đổi, ký, bảo vệ chỉ một cú bấm; cũng có ở Tệp › Công cụ nhanh), hoàn tác/làm lại cho mọi thao tác, bảng lệnh Ctrl+K, chủ đề sáng/tối, kéo thả tệp vào cửa sổ.
+
+Thao tác nhanh với ribbon:
+
+- **Thanh truy cập nhanh** ở thanh tiêu đề (Mở, Xuất, In, Hoàn tác, Làm lại). Bấm ▾ để chọn lệnh, hoặc chuột phải lên bất kỳ nút ribbon nào › Thêm vào thanh truy cập nhanh.
+- **Phím truy cập (KeyTips)**: nhấn rồi thả Alt (Mac: ⌥), chữ cái hiện trên tab và nút; gõ chữ cái để chạy lệnh, Esc để lùi.
+- **Tệp** mở trang Backstage: mở/tạo/xuất, tạo PDF từ ảnh/Word/Excel, chủ đề, kiểu ribbon, tài khoản.
+- Kiểu ribbon: đầy đủ, gọn (một hàng) hoặc chỉ hiện tab; Ctrl+F1 (Mac: ⌥⌘R) hoặc nhấp đúp tên tab để thu gọn.
+- **Menu chuột phải** (nhấn giữ trên Android) trên trang, ảnh thu nhỏ và nút ribbon.
+- Thanh trạng thái: chuyển trang, mức thu phóng, nút ẩn/hiện ảnh thu nhỏ và bảng bên.
+
+Đa nền tảng: Windows, macOS, Linux, ChromeOS, iPad/iPhone, Android. Phím tắt hiển thị đúng hệ điều hành (⌘ trên Mac/iPad). Trên máy tính bảng và điện thoại, ribbon thành một hàng biểu tượng cuộn ngang, ảnh thu nhỏ và bảng bên thành ngăn kéo; nút đủ lớn cho cảm ứng; chừa vùng tai thỏ/thanh home của iPhone. Có chế độ tương phản cao của Windows và giảm chuyển động.
 
 Di chuyển và căn chỉnh:
 
@@ -57,6 +70,7 @@ node --test tests/
 ## Cấu trúc
 
 - `index.html`: giao diện và CSS.
+- `src/ribbon.js` (bố cục ribbon, KeyTips, phím tắt theo nền tảng; có test), `src/ribbonbar.js` (dựng thanh tiêu đề, ribbon, Backstage, thanh trạng thái, menu chuột phải, ngăn kéo), `src/ribbon.css`. Thiết kế: [docs/ribbon-ui.md](docs/ribbon-ui.md).
 - `src/app.js`: điều phối giao diện, lịch sử hoàn tác, hộp thoại.
 - `src/model.js`, `src/marks.js`: mô hình chữ và chú thích.
 - `src/export.js`: ghi mọi chỉnh sửa vào PDF (pdf-lib), kể cả trang đã xoay.

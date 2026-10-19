@@ -1,6 +1,7 @@
-// Entry point: builds the editor shell (menu bar, mode tabs, toolbar, properties bar, thumbnails,
+// Entry point: builds the editor shell (title bar, ribbon, properties bar, status bar, thumbnails,
 // side panels, dialogs, command palette) and wires it to the PDF.js page view, the item models,
-// page operations and the pdf-lib exporter.
+// page operations and the pdf-lib exporter. The ribbon layout is in ribbon.js, its DOM in
+// ribbonbar.js; every button runs a command of ACTIONS or TOOL_INFO through commandInfo().
 //
 // Every item is stored in view space: PDF points at scale 1 with the page's rotation applied,
 // origin top-left (see geometry.js). Text boxes are scaled by the zoom factor; markup is drawn in an
@@ -63,10 +64,11 @@ import {
   rotatePages,
 } from './pdfops.js';
 import { cropPages, mergePdfs, pageBoxes } from './pdfops.js';
-import { splitPlan } from './pages.js';
+import { reverseOrder, splitPlan } from './pages.js';
 import { contentBounds, croppedBox, marginsFromBounds, mmToPt, ptToMm, unionRects } from './crop.js';
 import { loadUnicodeFont, needsUnicodeFont } from './fonts.js';
 import { quickToolsGrid } from './quicktools.js';
+import { bookmarkSlot, flattenOutline, indentBookmark, insertBookmark, moveBookmark, nextBookmarkId, remapBookmarks, removeBookmark, renameBookmark, visibleIndices } from './bookmarks.js';
 import { rasterizeRedactions } from './redact.js';
 import { compressPdf, decryptPdf, encryptPdf, isEncrypted } from './protect.js';
 import { OCR_LANGUAGES, ocrPage } from './ocr.js';
@@ -93,10 +95,15 @@ import {
 } from './account.js';
 import { exportPdf } from './export.js';
 import { confirmDialog, el, field, icon, iconButton, isDialogOpen, openDialog, svgEl } from './dom.js';
+import { RIBBON_TABS, commandTool, detectPlatform, formatShortcut, ribbonCommandIds, tabForCommand, toolCommand } from './ribbon.js';
+import { closeContextMenus, createPanelLayout, createRibbon, createStatusBar, openContextMenu } from './ribbonbar.js';
 
 const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
 const HISTORY_LIMIT = 100;
+// Shortcut labels follow the platform: ⌘K on Apple devices, Ctrl+K elsewhere.
+const PLATFORM = detectPlatform({ platform: navigator.userAgentData?.platform ?? navigator.platform, userAgent: navigator.userAgent, maxTouchPoints: navigator.maxTouchPoints });
+const keyLabel = (key) => formatShortcut(key, PLATFORM);
 const EMPTY_SETTINGS = Object.freeze({
   watermark: null,
   headerFooter: null,
@@ -196,6 +203,12 @@ const ACTIONS = {
   organizePages: { label: 'Sắp xếp trang', icon: 'pages', needsDoc: true, run: () => setMode('organize') },
   unlock: { label: 'Gỡ mật khẩu tệp PDF…', icon: 'unlock', run: unlockQuick },
   outline: { label: 'Mục lục (bookmark)', icon: 'bookmark', needsDoc: true, run: () => showPanel('outline') },
+  commentsPanel: { label: 'Danh sách chú thích', icon: 'comments', run: () => showPanel('comments') },
+  toggleThumbs: { label: 'Hiện/ẩn ảnh thu nhỏ trang', icon: 'panelLeft', checked: () => !!layout?.isShown('left'), run: () => layout.toggle('left') },
+  toggleSidebar: { label: 'Hiện/ẩn bảng bên', icon: 'panelRight', checked: () => !!layout?.isShown('right'), run: () => layout.toggle('right') },
+  ribbonClassic: { label: 'Ribbon đầy đủ', icon: 'ribbon', checked: () => ribbon?.mode === 'classic', run: () => ribbon.setMode('classic') },
+  ribbonSimple: { label: 'Ribbon gọn (một hàng)', icon: 'ribbonSimple', checked: () => ribbon?.mode === 'simple', run: () => ribbon.setMode('simple') },
+  ribbonTabs: { label: 'Thu gọn ribbon (chỉ hiện tab)', icon: 'chevronUp', key: PLATFORM === 'mac' || PLATFORM === 'ios' ? 'Ctrl+Alt+R' : 'Ctrl+F1', checked: () => ribbon?.mode === 'tabs', run: () => ribbon.toggleCollapsed() },
   themeSystem: { label: 'Chủ đề theo hệ thống', icon: 'info', checked: () => state.theme === 'system', run: () => applyTheme('system') },
   themeLight: { label: 'Chủ đề sáng', icon: 'info', checked: () => state.theme === 'light', run: () => applyTheme('light') },
   themeDark: { label: 'Chủ đề tối', icon: 'info', checked: () => state.theme === 'dark', run: () => applyTheme('dark') },
@@ -206,87 +219,15 @@ const ACTIONS = {
   logout: { label: 'Đăng xuất VET VIRAL', icon: 'logout', enabled: () => account.signedIn, run: logoutAccount },
 };
 
-const MENUS = [
-  { label: 'Tệp', items: ['open', 'newBlank', 'quickTools', 'convertHub', '-', 'merge', 'imagesToPdf', 'excelToPdf', 'docxToPdf', '-', 'export', 'exportImage', 'print', '-', 'chooseFont', 'properties', '-', 'closeDoc'] },
-  { label: 'Sửa', items: ['undo', 'redo', '-', 'delete', '-', 'find', 'palette'] },
-  { label: 'Xem', items: ['zoomIn', 'zoomOut', 'zoom100', 'fitPage', 'fitWidth', '-', 'outline', '-', 'themeSystem', 'themeLight', 'themeDark'] },
-  { label: 'Trang', items: ['rotateLeft', 'rotateRight', 'movePageUp', 'movePageDown', '-', 'insertBlank', 'duplicatePage', 'deletePage', '-', 'crop', 'pageNumbers', '-', 'extractPages', 'split', 'combine'] },
-  {
-    label: 'Công cụ',
-    items: [
-      { tool: 'note' }, { tool: 'highlight' }, { tool: 'underline' }, { tool: 'strike' }, { tool: 'rect' }, { tool: 'ink' }, { tool: 'stamp' },
-      '-', { tool: 'text' }, 'insertImage', { tool: 'link' }, 'watermark', 'headerFooter',
-      '-', 'signature', { tool: 'check' }, { tool: 'date' }, 'forms',
-      '-', { tool: 'redact' },
-    ],
-  },
-  { label: 'Chuyển đổi', items: ['convertHub', '-', 'ocr', 'toggleOcr', '-', 'exportExcel', 'exportWord', 'exportText', 'exportHtml', '-', 'exportImagesDpi', 'extractImages', 'exportImage', '-', 'compress'] },
-  { label: 'Bảo vệ', items: ['protect', 'unlock', 'sanitize', '-', { tool: 'redact' }] },
-  { label: 'Trợ giúp', items: ['quickTools', 'shortcuts', 'palette', '-', 'login', 'news', 'manageAccount', 'logout'] },
-];
-
-// Mode tabs use the tool-group hues of the reference app (pdfcraft catalog).
-const MODES = {
-  read: { label: 'Đọc', hue: 'var(--blue)', groups: [['select'], [{ action: 'find' }, { action: 'print' }]], defaultTool: 'select' },
-  comment: {
-    label: 'Chú thích',
-    hue: 'var(--orange)',
-    groups: [['select'], ['note', 'highlight', 'underline', 'strike', 'squiggly'], ['rect', 'oval', 'line', 'arrow', 'ink', 'stamp']],
-    defaultTool: 'highlight',
-  },
-  edit: {
-    label: 'Chỉnh sửa',
-    hue: 'var(--pink)',
-    groups: [['select', 'text', 'link'], [{ action: 'insertImage' }, { action: 'watermark' }, { action: 'headerFooter' }, { action: 'properties' }]],
-    defaultTool: 'select',
-  },
-  organize: {
-    label: 'Trang',
-    hue: 'var(--green)',
-    groups: [
-      ['select'],
-      [{ action: 'rotateLeft' }, { action: 'rotateRight' }, { action: 'movePageUp' }, { action: 'movePageDown' }],
-      [{ action: 'insertBlank' }, { action: 'duplicatePage' }, { action: 'deletePage' }],
-      [{ action: 'crop' }, { action: 'pageNumbers' }],
-      [{ action: 'extractPages' }, { action: 'split' }, { action: 'combine' }],
-    ],
-    defaultTool: 'select',
-  },
-  sign: {
-    label: 'Ký & điền',
-    hue: 'var(--purple)',
-    groups: [['select', 'text', 'date'], ['check', 'cross', 'dot'], [{ action: 'signature' }, { action: 'forms' }]],
-    defaultTool: 'select',
-  },
-  convert: {
-    label: 'Chuyển đổi',
-    hue: 'var(--teal)',
-    groups: [
-      ['select'],
-      [{ action: 'convertHub' }],
-      [{ action: 'ocr' }, { action: 'toggleOcr' }],
-      [{ action: 'exportExcel' }, { action: 'exportWord' }, { action: 'exportImagesDpi' }],
-      [{ action: 'excelToPdf' }, { action: 'docxToPdf' }, { action: 'imagesToPdf' }],
-      [{ action: 'compress' }],
-    ],
-    defaultTool: 'select',
-  },
-  protect: {
-    label: 'Bảo vệ',
-    hue: 'var(--red)',
-    groups: [['select', 'redact'], [{ action: 'find' }], [{ action: 'protect' }, { action: 'unlock' }, { action: 'sanitize' }]],
-    defaultTool: 'redact',
-  },
-};
-
 // ---------- DOM and state ----------
 
 const $ = (id) => document.getElementById(id);
 const els = {
-  menubar: $('menubar'),
-  modebar: $('modebar'),
-  toolbar: $('toolbar'),
+  titlebar: $('titlebar'),
+  ribbon: $('ribbon'),
+  statusbar: $('statusbar'),
   propsbar: $('propsbar'),
+  panelLeft: document.querySelector('.panel.left'),
   thumbs: $('thumbs'),
   thumbActions: $('thumb-actions'),
   view: $('pages'),
@@ -299,8 +240,6 @@ const els = {
   start: $('start'),
   newsCount: $('news-count'),
   status: $('status'),
-  pageinfo: $('pageinfo'),
-  zoominfo: $('zoominfo'),
   pdfInput: $('pdf-input'),
   fontInput: $('font-input'),
   imageInput: $('image-input'),
@@ -323,7 +262,7 @@ const store = new EditorStore({
   marks: [],
   settings: EMPTY_SETTINGS,
   selected: null, // { kind: 'box' | 'mark', id }
-  mode: 'read',
+  mode: 'home', // the ribbon tab on screen
   tool: 'select',
   zoom: 1,
   fit: null,
@@ -347,8 +286,9 @@ const state = store.state;
 
 const account = new AccountClient({ storage: safeStorage() });
 
-const quick = {};
 let renderTimer = null;
+let ribbon = null; // created at startup (ribbonbar.js)
+let layout = null; // side-panel columns and drawers
 let propEdit = null;
 let textEdit = null;
 let dragSnap = null;
@@ -532,145 +472,141 @@ function applyTheme(theme) {
   } catch {
     // Storage can be blocked; the theme simply resets next visit.
   }
-}
-
-// ---------- menus ----------
-
-function closeMenus() {
-  document.querySelectorAll('.dropdown').forEach((d) => d.remove());
-}
-
-function menuEntry(item) {
-  if (item.tool) {
-    const info = TOOL_INFO[item.tool];
-    return { label: info.label, icon: info.icon, checked: state.tool === item.tool, run: () => setTool(item.tool) };
-  }
-  const a = ACTIONS[item];
-  const disabled = (a.needsDoc && !state.pdfBytes) || (a.enabled && !a.enabled());
-  return { label: a.label, icon: a.icon, key: a.key, checked: a.checked?.(), disabled, run: () => runAction(item) };
-}
-
-function openMenu(wrap, menu) {
-  const had = wrap.querySelector('.dropdown');
-  closeMenus();
-  if (had) return;
-  const dd = el('div', { class: 'dropdown', role: 'menu', onclick: (e) => e.stopPropagation() });
-  for (const item of menu.items) {
-    if (item === '-') {
-      dd.append(el('div', { class: 'dd-sep' }));
-      continue;
-    }
-    const e = menuEntry(item);
-    dd.append(
-      el('button', { role: 'menuitem', disabled: e.disabled, onclick: () => { closeMenus(); e.run(); } },
-        el('span', { class: 'dd-check' }, e.checked ? '✓' : ''),
-        icon(e.icon, 16),
-        el('span', { class: 'grow' }, e.label),
-        e.key ? el('span', { class: 'key' }, e.key) : null,
-      ),
-    );
-  }
-  wrap.append(dd);
-}
-
-function buildMenubar() {
-  for (const menu of MENUS) {
-    const wrap = el('div', { class: 'menu' });
-    wrap.append(el('button', { onclick: (e) => { e.stopPropagation(); openMenu(wrap, menu); } }, menu.label));
-    els.menubar.append(wrap);
-  }
-  els.accountArea = el('div', { class: 'account-area' });
-  els.menubar.append(
-    el('span', { class: 'grow' }),
-    el('button', { class: 'search-cmd', onclick: () => runAction('palette'), title: 'Tìm công cụ và lệnh (Ctrl+K)' }, icon('search', 15), 'Tìm công cụ và lệnh…', el('span', { class: 'key' }, 'Ctrl+K')),
-    els.accountArea,
-  );
-  document.addEventListener('click', closeMenus);
-}
-
-// ---------- mode bar, toolbar ----------
-
-function renderModebar() {
-  els.modebar.replaceChildren();
-  for (const [key, m] of Object.entries(MODES)) {
-    els.modebar.append(el('button', { class: `mode${state.mode === key ? ' on' : ''}`, style: `--hue:${m.hue}`, onclick: () => setMode(key) }, m.label));
-  }
-  quick.save = iconButton('save', 'Xuất PDF (Ctrl+S)', () => runAction('export'));
-  quick.print = iconButton('print', 'In (Ctrl+P)', () => runAction('print'));
-  quick.undo = iconButton('undo', 'Hoàn tác (Ctrl+Z)', undo);
-  quick.redo = iconButton('redo', 'Làm lại (Ctrl+Y)', redo);
-  els.modebar.append(el('span', { class: 'grow' }), iconButton('open', 'Mở PDF (Ctrl+O)', () => runAction('open')), quick.save, quick.print, el('span', { class: 'sep' }), quick.undo, quick.redo);
   updateQuick();
 }
 
-function updateQuick() {
-  if (!quick.undo) return;
-  quick.undo.disabled = !store.canUndo;
-  quick.redo.disabled = !store.canRedo;
-  quick.save.disabled = !state.pdfBytes;
-  quick.print.disabled = !state.pdfBytes;
+// ---------- ribbon, status bar, panels ----------
+
+// A ribbon/QAT/status-bar command: an ACTIONS id or 'tool:<name>'. Null for an unknown id.
+function commandInfo(id) {
+  const tool = commandTool(id);
+  if (tool) {
+    const info = TOOL_INFO[tool];
+    return info && { label: info.label, icon: info.icon, toggle: true, on: () => state.tool === tool, enabled: () => true, run: () => setTool(tool) };
+  }
+  const a = ACTIONS[id];
+  if (!a) return null;
+  const available = { undo: () => store.canUndo, redo: () => store.canRedo }[id];
+  return {
+    label: a.label,
+    icon: a.icon,
+    key: a.key,
+    toggle: !!a.checked,
+    on: () => !!a.checked?.(),
+    enabled: () => !(a.needsDoc && !state.pdfBytes) && !(a.enabled && !a.enabled()) && (available?.() ?? true),
+    run: () => runAction(id),
+  };
 }
 
-function renderToolbar() {
-  els.toolbar.replaceChildren();
-  MODES[state.mode].groups.forEach((group, gi) => {
-    if (gi > 0) els.toolbar.append(el('span', { class: 'sep' }));
-    for (const item of group) {
-      if (typeof item === 'string') {
-        const info = TOOL_INFO[item];
-        els.toolbar.append(el('button', { class: 'tool', 'data-tool': item, title: info.label, 'aria-label': info.label, onclick: () => setTool(item) }, icon(info.icon)));
-      } else {
-        const a = ACTIONS[item.action];
-        els.toolbar.append(el('button', { class: 'act', title: a.key ? `${a.label} (${a.key})` : a.label, onclick: () => runAction(item.action) }, icon(a.icon), el('span', {}, a.label.replace(/…$/, ''))));
-      }
-    }
-  });
-  els.toolbar.append(
-    el('span', { class: 'grow' }),
-    iconButton('zoomOut', 'Thu nhỏ (Ctrl+-)', () => zoomBy(-1)),
-    el('button', { class: 'zoomtxt', title: 'Thực tế 100% (Ctrl+0)', onclick: () => setZoom(1) }, `${Math.round(state.zoom * 100)}%`),
-    iconButton('zoomIn', 'Phóng to (Ctrl++)', () => zoomBy(1)),
-    el('span', { class: 'sep' }),
-    iconButton('fitWidth', 'Vừa chiều rộng (Ctrl+2)', () => fitTo('width')),
-    iconButton('fitPage', 'Vừa trang (Ctrl+1)', () => fitTo('page')),
-    el('span', { class: 'sep' }),
-    iconButton('prev', 'Trang trước', () => scrollToPage(state.current - 1)),
-    el('input', { type: 'number', min: 1, id: 'page-field', 'aria-label': 'Số trang', style: 'width:56px', value: state.current + 1, onchange: (e) => scrollToPage(Number(e.target.value) - 1) }),
-    el('span', { class: 'lbl' }, `/ ${state.pageSizes.length || 0}`),
-    iconButton('next', 'Trang sau', () => scrollToPage(state.current + 1)),
-  );
-  applyToolClasses();
+function docInfo() {
+  if (!state.pdfBytes) return null;
+  return { name: state.fileName, meta: `${state.pageSizes.length} trang · ${sizeLabel(state.pdfBytes.length)}` };
+}
+
+// Button states follow the document, the history, the tool, the theme and the account.
+function updateQuick() {
+  ribbon?.refresh();
 }
 
 function applyToolClasses() {
-  els.toolbar.querySelectorAll('button[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === state.tool));
   const textTool = state.tool === 'text' || state.tool === 'date';
   state.pageEls.forEach((div) => {
     div.classList.toggle('tool-select', state.tool === 'select');
     div.classList.toggle('tool-text', textTool);
-    div.classList.toggle('tool-create', state.tool !== 'select' && !textTool);
+    div.classList.toggle('tool-create', state.tool !== 'select' && state.tool !== 'hand' && !textTool);
   });
 }
 
+// Shows a ribbon tab. Changing tabs keeps the current tool, as in an office suite.
 function setMode(mode) {
   state.mode = mode;
-  setTool(MODES[mode].defaultTool);
-  renderModebar();
-  renderToolbar();
+  ribbon?.selectTab(mode);
   if (mode === 'sign' && state.formFields.length) showPanel('forms');
 }
 
 function setTool(tool) {
-  if (!MODES[state.mode].groups.flat().includes(tool)) {
-    state.mode = Object.keys(MODES).find((k) => MODES[k].groups.flat().includes(tool)) ?? state.mode;
-    renderModebar();
+  const tab = tabForCommand(RIBBON_TABS, toolCommand(tool), state.mode);
+  if (tab !== state.mode) {
+    state.mode = tab;
+    ribbon?.selectTab(tab);
   }
   if (state.gesture) cancelGesture();
   select(null);
   state.tool = tool;
-  renderToolbar();
+  applyToolClasses();
+  updateQuick();
   renderProps();
   store.emit(EVENTS.toolChanged, { mode: state.mode, tool });
+}
+
+// The status bar shows "/ 12" next to the page field, and the zoom only while a document is open.
+function updateStatusBar() {
+  const field = $('page-field');
+  const total = state.pageSizes.length;
+  if (field) {
+    field.value = total ? state.current + 1 : '';
+    field.max = Math.max(1, total);
+    field.disabled = !total;
+  }
+  const count = $('pageinfo');
+  const zoom = $('zoominfo');
+  if (count) count.textContent = `/ ${total}`;
+  if (zoom) zoom.textContent = state.doc ? `${Math.round(state.zoom * 100)}%` : '—';
+}
+
+// Right-click (or long-press) on a page: the item under the pointer, that page, the view.
+function pageContextMenu(e) {
+  const pageEl = e.target.closest?.('.page');
+  if (!pageEl || !state.doc) return;
+  e.preventDefault();
+  const page = Number(pageEl.dataset.page);
+  const markId = e.target.closest('g.mark')?.dataset.id;
+  const boxId = e.target.closest('.tbox')?.dataset.id;
+  if (markId) select({ kind: 'mark', id: markId });
+  else if (boxId) select({ kind: 'box', id: Number(boxId) });
+  const item = (id, extra = {}) => {
+    const c = commandInfo(id);
+    return c && { label: c.label, icon: c.icon, key: c.key && keyLabel(c.key), disabled: !c.enabled(), run: c.run, ...extra };
+  };
+  const onPage = (run) => () => {
+    setCurrentPage(page);
+    run();
+  };
+  openContextMenu(e.clientX, e.clientY, [
+    state.selected && item('delete'),
+    state.selected && '-',
+    item('rotateLeft', { run: () => store.dispatch('page:rotate', { pages: [page], delta: -90 }) }),
+    item('rotateRight', { run: () => store.dispatch('page:rotate', { pages: [page], delta: 90 }) }),
+    item('insertBlank', { run: onPage(insertBlankAfter) }),
+    item('duplicatePage', { run: onPage(duplicateCurrent) }),
+    item('deletePage', { run: () => store.dispatch('page:delete', { pages: [page] }) }),
+    '-',
+    item('zoomIn'),
+    item('zoomOut'),
+    item('fitWidth'),
+    '-',
+    item('find'),
+    item('tool:select'),
+  ]);
+}
+
+// Right-click on a thumbnail: page actions for the selected pages, or for that page alone.
+function thumbContextMenu(e) {
+  const card = e.target.closest?.('.thumb');
+  if (!card || !state.doc) return;
+  e.preventDefault();
+  const index = Number(card.dataset.page);
+  const chosen = els.thumbs.selection ?? [];
+  const pages = chosen.includes(index) ? chosen : [index];
+  const label = pages.length > 1 ? ` (${pages.length} trang)` : '';
+  openContextMenu(e.clientX, e.clientY, [
+    { label: `Xoay trái${label}`, icon: 'rotateLeft', run: () => store.dispatch('page:rotate', { pages, delta: -90 }) },
+    { label: `Xoay phải${label}`, icon: 'rotateRight', run: () => store.dispatch('page:rotate', { pages, delta: 90 }) },
+    pages.length === 1 && { label: 'Chèn trang trắng phía sau', icon: 'pageAdd', run: () => { setCurrentPage(index); insertBlankAfter(); } },
+    pages.length === 1 && { label: 'Nhân bản trang', icon: 'pageCopy', run: () => { setCurrentPage(index); duplicateCurrent(); } },
+    '-',
+    { label: `Xóa trang${label}`, icon: 'trash', run: () => store.dispatch('page:delete', { pages }) },
+  ]);
 }
 
 // ---------- zoom, navigation, rendering ----------
@@ -681,9 +617,7 @@ function setZoom(z, fit = null, anchor = null) {
   state.zoom = clamp(z, 0.25, 4);
   state.fit = fit;
   zoomAnchor = anchor;
-  const label = `${Math.round(state.zoom * 100)}%`;
-  els.zoominfo.textContent = label;
-  els.toolbar.querySelectorAll('.zoomtxt').forEach((b) => (b.textContent = label));
+  updateStatusBar();
   store.emit(EVENTS.zoomChanged, { zoom: state.zoom });
   if (state.doc) scheduleRender();
 }
@@ -725,9 +659,7 @@ function scrollToPage(index, smooth = true) {
 
 function setCurrentPage(i) {
   state.current = i;
-  els.pageinfo.textContent = state.pageSizes.length ? `Trang ${i + 1} / ${state.pageSizes.length}` : '';
-  const f = $('page-field');
-  if (f) f.value = i + 1;
+  updateStatusBar();
   store.emit(EVENTS.pageChanged, { index: i, count: state.pageSizes.length });
 }
 
@@ -1421,6 +1353,7 @@ function applyProp(prop, value) {
 
 function showPanel(name) {
   state.panel = name;
+  layout?.show('right');
   renderPanel();
 }
 
@@ -2525,14 +2458,15 @@ function renderAccountArea() {
     wrap.append(el('button', { class: 'account-btn', title: 'Đăng nhập bằng tài khoản VET VIRAL', onclick: () => runAction('login') }, el('span', { class: 'avatar' }, icon('user', 12)), el('span', { class: 'label' }, 'Đăng nhập')));
   }
   els.accountArea.replaceChildren(bell, wrap);
+  updateQuick();
 }
 
 function openAccountMenu(wrap) {
   const had = wrap.querySelector('.dropdown');
-  closeMenus();
+  closeContextMenus();
   if (had) return;
   const { user } = state.vv;
-  const item = (iconName, label, run) => el('button', { role: 'menuitem', onclick: () => { closeMenus(); run(); } }, el('span', { class: 'dd-check' }), icon(iconName, 16), el('span', { class: 'grow' }, label));
+  const item = (iconName, label, run) => el('button', { role: 'menuitem', onclick: () => { closeContextMenus(); run(); } }, el('span', { class: 'dd-check' }), icon(iconName, 16), el('span', { class: 'grow' }, label));
   wrap.append(el('div', { class: 'dropdown right', role: 'menu', onclick: (e) => e.stopPropagation() },
     el('div', { class: 'acct-head' },
       el('div', { class: 'name' }, user?.name || 'Tài khoản VET VIRAL'),
@@ -2799,7 +2733,7 @@ async function closeDocument() {
   els.view.replaceChildren();
   store.emit(EVENTS.pagesUpdated, { doc: null, pageSizes: [], current: 0, order: null, changed: [] });
   setCurrentPage(0);
-  renderToolbar();
+  updateQuick();
   renderProps();
   renderPanel();
   updateQuick();
@@ -3552,13 +3486,18 @@ function cropToInk(canvas) {
 }
 
 function showShortcuts() {
+  const k = keyLabel;
+  const apple = PLATFORM === 'mac' || PLATFORM === 'ios';
   const rows = [
-    ['Ctrl+K', 'Tìm công cụ và lệnh'], ['Ctrl+O', 'Mở PDF'], ['Ctrl+S', 'Xuất PDF'], ['Ctrl+P', 'In'], ['Ctrl+F', 'Tìm văn bản'],
-    ['Ctrl+Z / Ctrl+Y', 'Hoàn tác / làm lại'], ['Del', 'Xóa mục đã chọn'], ['Mũi tên', 'Dịch mục 1 pt (Shift: 10 pt)'],
-    ['Ctrl+ + / −', 'Phóng to / thu nhỏ'], ['Ctrl+0 / 1 / 2', '100% / vừa trang / vừa chiều rộng'], ['Esc', 'Về công cụ Chọn'],
-    ['Ctrl+lăn chuột, chụm 2 ngón', 'Phóng to tại vị trí con trỏ'], ['Space+kéo, chuột giữa, H', 'Kéo để cuộn trang (H: công cụ Bàn tay)'],
-    ['Ctrl khi kéo mục', 'Tắt bắt dính vào lề, tâm trang và mục khác'],
-    ['Danh sách trang: Ctrl/Shift+bấm', 'Chọn nhiều trang, rồi kéo thả để sắp xếp'], ['Danh sách trang: Alt+↑/↓, Del', 'Di chuyển / xóa các trang đã chọn'],
+    [k('Ctrl+K'), 'Tìm công cụ và lệnh'], [k('Ctrl+O'), 'Mở PDF'], [k('Ctrl+S'), 'Xuất PDF'], [k('Ctrl+P'), 'In'], [k('Ctrl+F'), 'Tìm văn bản'],
+    [`${k('Ctrl+Z')} / ${k('Ctrl+Y')}`, 'Hoàn tác / làm lại'], [k('Del'), 'Xóa mục đã chọn'], ['Mũi tên', 'Dịch mục 1 pt (Shift: 10 pt)'],
+    [`${k('Ctrl++')} / ${k('Ctrl+-')}`, 'Phóng to / thu nhỏ'], [`${k('Ctrl+0')} / 1 / 2`, '100% / vừa trang / vừa chiều rộng'], ['Esc', 'Về công cụ Chọn, đóng ngăn kéo'],
+    [apple ? '⌥ (nhấn rồi thả)' : 'Alt (nhấn rồi thả)', 'Hiện phím truy cập (KeyTips) trên ribbon, rồi gõ chữ cái'],
+    [apple ? '⌥⌘R' : 'Ctrl+F1', 'Thu gọn / hiện ribbon (hoặc nhấp đúp tên tab)'],
+    ['Chuột phải, nhấn giữ', 'Menu nhanh trên trang, ảnh thu nhỏ và nút ribbon'],
+    [`${apple ? '⌘' : 'Ctrl'}+lăn chuột, chụm 2 ngón`, 'Phóng to tại vị trí con trỏ'], ['Space+kéo, chuột giữa, H', 'Kéo để cuộn trang (H: công cụ Bàn tay)'],
+    [`${apple ? '⌘' : 'Ctrl'} khi kéo mục`, 'Tắt bắt dính vào lề, tâm trang và mục khác'],
+    [`Danh sách trang: ${apple ? '⌘' : 'Ctrl'}/Shift+bấm`, 'Chọn nhiều trang, rồi kéo thả để sắp xếp'], [`Danh sách trang: ${apple ? '⌥' : 'Alt'}+↑/↓, Del`, 'Di chuyển / xóa các trang đã chọn'],
   ];
   openDialog({
     title: 'Phím tắt',
@@ -3571,8 +3510,8 @@ function openPalette() {
   const fold = (s) => s.toLocaleLowerCase('vi').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
   const entries = [
     ...Object.entries(TOOL_INFO).map(([t, info]) => ({ label: info.label, icon: info.icon, detail: 'Công cụ', run: () => setTool(t) })),
-    ...Object.entries(ACTIONS).filter(([id]) => id !== 'palette').map(([id, a]) => ({ label: a.label, icon: a.icon, detail: a.key ?? 'Lệnh', run: () => runAction(id) })),
-    ...Object.entries(MODES).map(([k, m]) => ({ label: `Chế độ: ${m.label}`, icon: 'command', detail: 'Chế độ', run: () => setMode(k) })),
+    ...Object.entries(ACTIONS).filter(([id]) => id !== 'palette').map(([id, a]) => ({ label: a.label, icon: a.icon, detail: a.key ? keyLabel(a.key) : 'Lệnh', run: () => runAction(id) })),
+    ...RIBBON_TABS.filter((t) => !t.backstage).map((t) => ({ label: `Tab: ${t.label}`, icon: 'ribbon', detail: 'Ribbon', run: () => setMode(t.id) })),
   ];
   const score = (label, q) => {
     if (!q) return 0;
@@ -3639,7 +3578,6 @@ async function loadDocument(bytes, { fresh = false, order = null, changed = [] }
     state.current = 0;
     state.zoom = clamp(fitZoom('width'), 0.25, 4);
     state.fit = 'width';
-    els.zoominfo.textContent = `${Math.round(state.zoom * 100)}%`;
     try {
       state.docInfo = (await doc.getMetadata()).info ?? null;
     } catch {
@@ -3647,7 +3585,7 @@ async function loadDocument(bytes, { fresh = false, order = null, changed = [] }
     }
   }
   state.current = clamp(state.current, 0, doc.numPages - 1);
-  renderToolbar();
+  updateStatusBar();
   updateQuick();
   if (fresh) store.emit(EVENTS.loaded, { fileName: state.fileName, pageCount: doc.numPages });
   store.emit(EVENTS.pagesUpdated, { doc, pageSizes: state.pageSizes, current: state.current, order, changed });
@@ -3875,7 +3813,8 @@ document.addEventListener('keydown', (e) => {
   }
   if (!mod && !e.altKey && key === 'h' && state.doc) return go(() => setTool(state.tool === 'hand' ? 'select' : 'hand'));
   if (e.key === 'Escape') {
-    closeMenus();
+    closeContextMenus();
+    if (layout?.close()) return;
     if (state.gesture) cancelGesture();
     else if (state.tool !== 'select') setTool('select');
     else select(null);
@@ -3903,11 +3842,49 @@ store.on(EVENTS.pagesUpdated, ({ pageSizes }) => {
   if (count) count.textContent = pageSizes.length ? `(${pageSizes.length})` : '';
 });
 
-buildMenubar();
+// Shell: side panels first (ribbon buttons show their state), then the ribbon and the status bar.
+const prefs = safeStorage();
+document.documentElement.dataset.platform = PLATFORM;
+layout = createPanelLayout({
+  storage: prefs,
+  left: els.panelLeft,
+  onChange: () => {
+    updateQuick();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => state.fit && fitTo(state.fit), 150);
+  },
+});
+els.accountArea = el('div', { class: 'account-area' });
+ribbon = createRibbon({
+  titlebar: els.titlebar,
+  host: els.ribbon,
+  command: commandInfo,
+  platform: PLATFORM,
+  storage: prefs,
+  tab: state.mode,
+  onTab: setMode,
+  accountArea: els.accountArea,
+  docInfo,
+});
+createStatusBar({
+  host: els.statusbar,
+  status: els.status,
+  command: commandInfo,
+  platform: PLATFORM,
+  zoomSteps: ZOOM_STEPS,
+  onPage: (to) => scrollToPage(to === 'prev' ? state.current - 1 : to === 'next' ? state.current + 1 : to),
+  onZoom: (z) => setZoom(z, null, els.view.centerAnchor?.()),
+  onToggle: (side) => layout.toggle(side),
+});
+const missing = ribbonCommandIds().filter((id) => !commandInfo(id));
+if (missing.length) console.info('Ribbon: các lệnh chưa có trong bản này được ẩn:', missing.join(', '));
+els.view.addEventListener('contextmenu', pageContextMenu);
+els.thumbs.addEventListener('contextmenu', thumbContextMenu);
+for (const ev of [EVENTS.toolChanged, EVENTS.selectionChanged, EVENTS.pagesUpdated, EVENTS.loaded]) store.on(ev, updateQuick);
+
 renderAccountArea();
 buildSearchPanel();
-renderModebar();
-renderToolbar();
+updateStatusBar();
 renderProps();
 renderPanel();
 showStart(!state.doc);
