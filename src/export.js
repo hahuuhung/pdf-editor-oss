@@ -8,10 +8,11 @@
 // diacritics. Without it, Helvetica is used, which only covers basic Latin.
 
 import { sanitizeBox } from './model.js';
-import { NOTE_SIZE, arrowHeadPoints, ellipsePoints, markBounds, sanitizeMark, zigzagPoints } from './marks.js';
+import { NOTE_SIZE, arrowHeadPoints, ellipsePoints, markBounds, safeUrl, sanitizeMark, zigzagPoints } from './marks.js';
 import { normalizeRotation, rectViewToPdf, viewSize, viewToPdf } from './geometry.js';
 import { formatTokens, headerFooterContext, sanitizeHeaderFooter, sanitizeMeta, sanitizeWatermark } from './docsettings.js';
 import { stripDiacritics } from './textlayout.js';
+import { outlineTree } from './bookmarks.js';
 
 const LINE_HEIGHT = 1.2;
 
@@ -249,6 +250,43 @@ function drawOcrLayer(pc, words, font) {
   pc.page.pushOperators(PDFLib.popGraphicsState());
 }
 
+// Replaces the document outline with `bookmarks` (bookmarks.js). An entry scrolls to its point with an
+// XYZ destination, or opens its web link. A non-empty outline opens in the viewer's bookmarks pane.
+function writeOutline(doc, bookmarks) {
+  const { PDFName, PDFHexString, PDFString } = PDFLib;
+  doc.catalog.delete(PDFName.of('Outlines'));
+  const tree = outlineTree(bookmarks);
+  if (!tree.length) return;
+  const ctx = doc.context;
+  const pages = doc.getPages();
+  const write = (nodes, parentRef) => {
+    const refs = nodes.map(() => ctx.nextRef());
+    let count = 0;
+    nodes.forEach((n, k) => {
+      const dict = { Title: PDFHexString.fromText(n.title || '(không tên)'), Parent: parentRef };
+      if (k > 0) dict.Prev = refs[k - 1];
+      if (k < nodes.length - 1) dict.Next = refs[k + 1];
+      const page = pages[n.page];
+      const url = safeUrl(n.url);
+      if (url) dict.A = ctx.obj({ S: 'URI', URI: PDFString.of(url) });
+      else if (page) dict.Dest = ctx.obj([page.ref, PDFName.of('XYZ'), n.left ?? null, n.top ?? null, null]);
+      if (n.children.length) {
+        const sub = write(n.children, refs[k]);
+        Object.assign(dict, { First: sub.first, Last: sub.last, Count: sub.count });
+        count += sub.count;
+      }
+      ctx.assign(refs[k], ctx.obj(dict));
+      count++;
+    });
+    return { first: refs[0], last: refs.at(-1), count };
+  };
+  const rootRef = ctx.nextRef();
+  const top = write(tree, rootRef);
+  ctx.assign(rootRef, ctx.obj({ Type: 'Outlines', First: top.first, Last: top.last, Count: top.count }));
+  doc.catalog.set(PDFName.of('Outlines'), rootRef);
+  doc.catalog.set(PDFName.of('PageMode'), PDFName.of('UseOutlines'));
+}
+
 // Removes hidden content: document metadata, JavaScript, embedded files and automatic actions.
 function sanitizeDocument(doc) {
   const { PDFName, PDFDict } = PDFLib;
@@ -379,6 +417,8 @@ export async function exportPdf(pdfBytes, boxes, { fontBytes, marks = [], settin
 
   const formTouched = applyForm(doc, settings.formValues, settings.flattenForm, regular);
 
+  // Bookmarks edited in the outline panel replace the document's own outline (null: keep it).
+  if (Array.isArray(settings.bookmarks)) writeOutline(doc, settings.bookmarks);
   if (settings.sanitize) sanitizeDocument(doc);
   const meta = sanitizeMeta(settings.meta);
   if (meta) {

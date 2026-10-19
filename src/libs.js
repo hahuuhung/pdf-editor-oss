@@ -11,6 +11,9 @@ export const LIB_URLS = {
   xlsx: 'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js', // Apache-2.0
   mammoth: 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js', // BSD-2-Clause
   unicodeFont: 'https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans.ttf', // Bitstream Vera / DejaVu license (free)
+  unicodeFontBold: 'https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans-Bold.ttf',
+  unicodeFontItalic: 'https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans-Oblique.ttf',
+  unicodeFontBoldItalic: 'https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans-BoldOblique.ttf',
 };
 
 const loading = new Map();

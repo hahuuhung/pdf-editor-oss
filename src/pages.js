@@ -121,3 +121,11 @@ export function pageSizeLabel(width, height) {
   const name = paperName(width, height);
   return `${mm(width)} × ${mm(height)} mm${name ? ` (${name})` : ''}`;
 }
+
+// Order that reverses the pages in `pages` (0-based) among their own positions; other pages stay.
+export function reverseOrder(total, pages) {
+  const order = Array.from({ length: total }, (_, i) => i);
+  const sorted = [...new Set(pages)].filter((i) => i >= 0 && i < total).sort((a, b) => a - b);
+  sorted.forEach((p, k) => (order[p] = sorted[sorted.length - 1 - k]));
+  return order;
+}

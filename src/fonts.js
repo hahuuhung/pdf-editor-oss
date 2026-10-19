@@ -34,19 +34,38 @@ export function toWinAnsi(text) {
   return out;
 }
 
-let fontPromise = null;
+export const FONT_VARIANTS = ['regular', 'bold', 'italic', 'boldItalic'];
 
-// Bytes of the default Unicode font (DejaVu Sans), fetched on first use and kept for the session.
-export function loadUnicodeFont() {
-  fontPromise ??= fetch(LIB_URLS.unicodeFont)
-    .then((r) => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.arrayBuffer();
-    })
-    .then((b) => new Uint8Array(b))
-    .catch((err) => {
-      fontPromise = null;
-      throw new Error(`Không tải được font tiếng Việt (${err.message}). Hãy kiểm tra mạng, hoặc chọn font .ttf tại Tệp › Chọn font.`);
-    });
-  return fontPromise;
+// The variant of a styled run { bold, italic }.
+export function fontVariant(style) {
+  return style?.bold ? (style.italic ? 'boldItalic' : 'bold') : style?.italic ? 'italic' : 'regular';
+}
+
+const FONT_URLS = {
+  regular: LIB_URLS.unicodeFont,
+  bold: LIB_URLS.unicodeFontBold,
+  italic: LIB_URLS.unicodeFontItalic,
+  boldItalic: LIB_URLS.unicodeFontBoldItalic,
+};
+const fontPromises = new Map();
+
+// Bytes of a variant of the default Unicode font (DejaVu Sans), fetched on first use and kept for the session.
+export function loadUnicodeFont(variant = 'regular') {
+  if (!fontPromises.has(variant)) {
+    const url = FONT_URLS[variant] ?? FONT_URLS.regular;
+    fontPromises.set(
+      variant,
+      fetch(url)
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.arrayBuffer();
+        })
+        .then((b) => new Uint8Array(b))
+        .catch((err) => {
+          fontPromises.delete(variant);
+          throw new Error(`Không tải được font tiếng Việt (${err.message}). Hãy kiểm tra mạng, hoặc chọn font .ttf tại Tệp › Chọn font.`);
+        }),
+    );
+  }
+  return fontPromises.get(variant);
 }

@@ -69,6 +69,91 @@ export function wrapText(text, maxWidth, measure) {
   return lines;
 }
 
+// Joins neighbouring pieces that share a style.
+function mergePieces(pieces) {
+  const out = [];
+  for (const p of pieces) {
+    const last = out.at(-1);
+    if (last && last.bold === p.bold && last.italic === p.italic) out[out.length - 1] = { ...last, text: last.text + p.text };
+    else out.push(p);
+  }
+  return out;
+}
+
+// Splits a word (pieces of one style each) into chunks no wider than `maxWidth`, between characters.
+function cutWord(pieces, maxWidth, measure) {
+  const chunks = [[]];
+  let width = 0;
+  for (const p of pieces) {
+    for (const ch of p.text) {
+      const w = measure(ch, p);
+      if (width + w > maxWidth && chunks.at(-1).length) {
+        chunks.push([]);
+        width = 0;
+      }
+      chunks.at(-1).push({ ...p, text: ch });
+      width += w;
+    }
+  }
+  return chunks.map(mergePieces);
+}
+
+// Wraps styled text into lines no wider than `maxWidth`. `runs` are { text, bold, italic }; a word
+// may span runs ("Hợp" + bold "đồng" without a space), "\n" forces a break, and `measure(text, run)`
+// gives a width for that run's style. Returns lines as arrays of runs; a blank line is [].
+export function wrapRuns(runs, maxWidth, measure) {
+  const words = [];
+  let word = null;
+  for (const run of runs) {
+    for (const part of String(run.text ?? '').split(/(\s+)/)) {
+      if (!part) continue;
+      if (/^\s+$/.test(part)) {
+        if (word) words.push(word);
+        word = null;
+        const breaks = part.match(/\n/g)?.length ?? 0;
+        for (let k = 0; k < breaks; k++) words.push(null); // null marks a line break
+        continue;
+      }
+      word ??= [];
+      word.push({ ...run, text: part });
+    }
+  }
+  if (word) words.push(word);
+
+  const lines = [];
+  let line = [];
+  let width = 0;
+  const flush = () => {
+    lines.push(mergePieces(line));
+    line = [];
+    width = 0;
+  };
+  for (const w of words) {
+    if (!w) {
+      flush();
+      continue;
+    }
+    const ww = w.reduce((s, p) => s + measure(p.text, p), 0);
+    const space = line.length ? measure(' ', line.at(-1)) : 0;
+    if (line.length && width + space + ww > maxWidth) flush();
+    if (!line.length && ww > maxWidth) {
+      const chunks = cutWord(w, maxWidth, measure);
+      chunks.slice(0, -1).forEach((c) => lines.push(c));
+      line = [...chunks.at(-1)];
+      width = line.reduce((s, p) => s + measure(p.text, p), 0);
+      continue;
+    }
+    if (line.length) {
+      line[line.length - 1] = { ...line.at(-1), text: `${line.at(-1).text} ` };
+      width += space;
+    }
+    line.push(...w);
+    width += ww;
+  }
+  if (line.length) flush();
+  return lines;
+}
+
 // `text` shortened with an ellipsis so that it fits in `maxWidth`.
 export function fitText(text, maxWidth, measure, ellipsis = '…') {
   const s = String(text ?? '');

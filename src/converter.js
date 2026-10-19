@@ -3,8 +3,8 @@
 // 100% Client-side in browser; heavy external libraries (SheetJS, Mammoth, JSZip) are lazy-loaded.
 
 import { LIB_URLS, loadScript } from './libs.js';
-import { toWinAnsi } from './fonts.js';
-import { fitText, wrapText } from './textlayout.js';
+import { fontVariant, toWinAnsi } from './fonts.js';
+import { fitText, wrapRuns, wrapText } from './textlayout.js';
 
 // ---------- Pure Helper Functions (Unit-Testable in Node & Browser) ----------
 
@@ -304,21 +304,48 @@ export async function exportPagesToImages(
   };
 }
 
-// Fonts for a generated PDF. With Unicode font bytes every character is kept; without them Helvetica
-// is used and the text is reduced to what it can write (Vietnamese accents are dropped).
-async function embedFonts(pdfDoc, fontBytes) {
+// Font files for a generated PDF: `loadFont(texts, variant)` gives Unicode font bytes or null (null
+// for 'regular' means the standard fonts suffice). Only the variants in `used` are asked for.
+async function loadFonts(loadFont, texts, used) {
+  const regular = (await loadFont?.(texts, 'regular')) ?? null;
+  if (!regular) return null;
+  const files = { regular };
+  for (const v of ['bold', 'italic', 'boldItalic']) if (used.has(v)) files[v] = (await loadFont(texts, v)) ?? null;
+  return files;
+}
+
+// Fonts for a generated PDF, in four styles. With Unicode font files every character is kept (a
+// missing style falls back to regular, bold-italic to bold); without them the standard Helvetica
+// family is used and `clean` reduces text to what it can write (Vietnamese accents are dropped).
+// `clean` collapses spaces but keeps line breaks; `styled(run)` picks the font of a { bold, italic } run.
+async function embedFonts(pdfDoc, files) {
   const { StandardFonts } = globalThis.PDFLib;
-  const oneLine = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
-  if (fontBytes) {
+  const spaces = (s) => String(s ?? '').replace(/[^\S\n]+/g, ' ');
+  let fonts;
+  if (files?.regular) {
     pdfDoc.registerFontkit(globalThis.fontkit);
-    const font = await pdfDoc.embedFont(fontBytes, { subset: true });
-    return { font, bold: font, clean: oneLine };
+    const cache = new Map();
+    const embed = (bytes) => {
+      if (!cache.has(bytes)) cache.set(bytes, pdfDoc.embedFont(bytes, { subset: true }));
+      return cache.get(bytes);
+    };
+    const regular = await embed(files.regular);
+    const bold = files.bold ? await embed(files.bold) : regular;
+    fonts = {
+      regular,
+      bold,
+      italic: files.italic ? await embed(files.italic) : regular,
+      boldItalic: files.boldItalic ? await embed(files.boldItalic) : bold,
+      clean: spaces,
+    };
+  } else {
+    const [regular, bold, italic, boldItalic] = await Promise.all(
+      [StandardFonts.Helvetica, StandardFonts.HelveticaBold, StandardFonts.HelveticaOblique, StandardFonts.HelveticaBoldOblique].map((f) => pdfDoc.embedFont(f)),
+    );
+    fonts = { regular, bold, italic, boldItalic, clean: (s) => toWinAnsi(spaces(s)) };
   }
-  return {
-    font: await pdfDoc.embedFont(StandardFonts.Helvetica),
-    bold: await pdfDoc.embedFont(StandardFonts.HelveticaBold),
-    clean: (s) => toWinAnsi(oneLine(s)),
-  };
+  fonts.styled = (style) => fonts[fontVariant(style)];
+  return fonts;
 }
 
 const A4 = [595.28, 841.89];
@@ -328,7 +355,7 @@ const A4 = [595.28, 841.89];
  * follow the content, wide sheets are laid out landscape, the header row repeats on each page and
  * numbers are right-aligned.
  * @param {ArrayBuffer|Uint8Array} fileData Excel file bytes
- * @param {Object} options { title, loadFont(texts) -> Promise<Uint8Array|null> for Unicode text }
+ * @param {Object} options { title, loadFont(texts, variant) -> Promise<Uint8Array|null> for Unicode text }
  */
 export async function excelToPdf(fileData, { title = 'Bảng tính Excel', loadFont = null } = {}) {
   await loadScript(LIB_URLS.xlsx);
@@ -344,10 +371,11 @@ export async function excelToPdf(fileData, { title = 'Bảng tính Excel', loadF
   })).filter((s) => s.rows.length);
   if (!sheets.length) throw new Error('Bảng tính trống, không có dữ liệu để chuyển sang PDF.');
 
-  const fontBytes = (await loadFont?.([title, ...sheets.flatMap((s) => [s.name, ...s.rows.flat()])])) ?? null;
+  const texts = [title, ...sheets.flatMap((s) => [s.name, ...s.rows.flat()])];
   const pdfDoc = await PDFLib.PDFDocument.create();
   pdfDoc.setTitle(title);
-  const { font, bold, clean } = await embedFonts(pdfDoc, fontBytes);
+  const { regular: font, bold, clean } = await embedFonts(pdfDoc, await loadFonts(loadFont, texts, new Set(['regular', 'bold'])));
+  const cell = (v) => clean(String(v ?? '').replace(/\s+/g, ' ')).trim();
 
   const MAX_COLS = 12;
   const margin = 36;
@@ -360,7 +388,7 @@ export async function excelToPdf(fileData, { title = 'Bảng tính Excel', loadF
   for (const sheet of sheets) {
     const allCols = Math.max(...sheet.rows.map((r) => r.length));
     const numCols = Math.min(MAX_COLS, allCols);
-    const rows = sheet.rows.map((r) => Array.from({ length: numCols }, (_, c) => clean(r[c])));
+    const rows = sheet.rows.map((r) => Array.from({ length: numCols }, (_, c) => cell(r[c])));
     const [pageWidth, pageHeight] = numCols > 6 ? [A4[1], A4[0]] : A4;
     const usable = pageWidth - 2 * margin;
     const chars = calculateColumnWidths(rows, { minWidth: 4, maxWidth: 40 });
@@ -368,7 +396,7 @@ export async function excelToPdf(fileData, { title = 'Bảng tính Excel', loadF
     const widths = chars.map((c) => (usable * c) / sum);
     const xs = widths.reduce((acc, w) => [...acc, acc.at(-1) + w], [margin]);
     const omitted = allCols > numCols ? ` (${numCols}/${allCols} cột đầu)` : '';
-    const heading = clean(`${sheets.length > 1 ? `${title} — ${sheet.name}` : title}${omitted}`);
+    const heading = cell(`${sheets.length > 1 ? `${title} — ${sheet.name}` : title}${omitted}`);
 
     let page;
     let y;
@@ -475,46 +503,91 @@ export async function imagesToPdfAdvanced(
   return doc.save();
 }
 
-// Block structure of mammoth's HTML: headings, paragraphs, list items (with depth and marker) and
-// table rows, each with plain text. Browser only (DOMParser).
+// Inline text of a node as styled runs: bold inside <strong>/<b>, italic inside <em>/<i>, "\n" for
+// <br>. Images and nested lists are handled separately.
+function inlineRuns(node, style = { bold: false, italic: false }, out = []) {
+  for (const child of node.childNodes) {
+    if (child.nodeType === 3) {
+      if (child.textContent) out.push({ text: child.textContent, ...style });
+    } else if (child.nodeType === 1 && !['IMG', 'UL', 'OL'].includes(child.tagName)) {
+      if (child.tagName === 'BR') out.push({ text: '\n', ...style });
+      else {
+        const t = child.tagName;
+        inlineRuns(child, { bold: style.bold || t === 'STRONG' || t === 'B', italic: style.italic || t === 'EM' || t === 'I' }, out);
+      }
+    }
+  }
+  return out;
+}
+
+// Block structure of mammoth's HTML: headings, paragraphs and list items (styled runs), images,
+// and table rows (plain text). Browser only (DOMParser).
 function htmlBlocks(html) {
   const body = new DOMParser().parseFromString(html, 'text/html').body;
   const text = (n) => n.textContent.replace(/\s+/g, ' ').trim();
   const blocks = [];
+  const image = (img) => blocks.push({ kind: 'image', src: img.getAttribute('src') ?? '', alt: img.getAttribute('alt') ?? '' });
   const walkList = (list, depth) => {
     let n = 0;
     for (const li of list.children) {
       if (li.tagName !== 'LI') continue;
       n++;
-      const own = li.cloneNode(true);
-      own.querySelectorAll('ul, ol').forEach((l) => l.remove());
-      blocks.push({ kind: 'item', depth, marker: list.tagName === 'OL' ? `${n}.` : '•', text: text(own) });
+      blocks.push({ kind: 'item', depth, marker: list.tagName === 'OL' ? `${n}.` : '•', runs: inlineRuns(li) });
+      for (const img of li.querySelectorAll('img')) if (img.closest('li') === li) image(img);
       for (const sub of li.children) if (sub.tagName === 'UL' || sub.tagName === 'OL') walkList(sub, depth + 1);
     }
   };
   const walk = (node) => {
     for (const child of node.children) {
       const tag = child.tagName;
-      if (/^H[1-6]$/.test(tag)) blocks.push({ kind: 'heading', level: Number(tag[1]), text: text(child) });
-      else if (tag === 'P') blocks.push({ kind: 'para', text: text(child) });
-      else if (tag === 'UL' || tag === 'OL') walkList(child, 0);
+      if (/^H[1-6]$/.test(tag)) blocks.push({ kind: 'heading', level: Number(tag[1]), runs: inlineRuns(child, { bold: true, italic: false }) });
+      else if (tag === 'P') {
+        blocks.push({ kind: 'para', runs: inlineRuns(child) });
+        child.querySelectorAll('img').forEach(image);
+      } else if (tag === 'UL' || tag === 'OL') walkList(child, 0);
       else if (tag === 'TABLE') {
         for (const tr of child.querySelectorAll('tr')) blocks.push({ kind: 'row', cells: [...tr.children].map(text) });
         blocks.push({ kind: 'gap' });
-      } else walk(child);
+      } else if (tag === 'IMG') image(child);
+      else walk(child);
     }
   };
   walk(body);
-  return blocks.filter((b) => b.kind === 'gap' || (b.text ?? b.cells.join('')).trim());
+  const hasText = (b) => (b.runs ? b.runs.map((r) => r.text).join('') : (b.cells ?? []).join('')).trim();
+  return blocks.filter((b) => b.kind === 'gap' || b.kind === 'image' || hasText(b));
+}
+
+// PNG or JPEG bytes of an image data URI; other raster formats (GIF, BMP, WebP…) go through a canvas.
+// Vector EMF/WMF pictures cannot be drawn by a browser and give null.
+async function imageBytes(src) {
+  const m = /^data:(image\/[\w.+-]+);base64,(.*)$/is.exec(src);
+  if (!m) return null;
+  const decode = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const type = m[1].toLowerCase();
+  if (type === 'image/png' || type === 'image/jpeg' || type === 'image/jpg') return { bytes: decode(m[2]), png: type === 'image/png' };
+  const png = await new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+  return png ? { bytes: decode(png.slice(png.indexOf(',') + 1)), png: true } : null;
 }
 
 const HEADING_SIZES = { 1: 18, 2: 15, 3: 13, 4: 12, 5: 11.5, 6: 11 };
 
 /**
  * Converts Word (.docx) to PDF: Mammoth reads the document structure, pdf-lib lays it out on A4 with
- * headings, paragraphs wrapped by measured width, bulleted and numbered lists, and tables.
- * Images and inline styles (bold, colours) are not carried over.
- * @param {Object} options { title, loadFont(texts) -> Promise<Uint8Array|null> for Unicode text }
+ * headings, paragraphs wrapped by measured width with bold and italic kept, bulleted and numbered
+ * lists, tables and pictures (PNG, JPEG and other raster formats). Colours, underline and
+ * vector (EMF/WMF) pictures are not carried over; such a picture leaves a short note.
+ * @param {Object} options { title, loadFont(texts, variant) -> Promise<Uint8Array|null> for Unicode text }
  */
 export async function docxToPdf(fileData, { title = 'Tài liệu Word', loadFont = null } = {}) {
   await loadScript(LIB_URLS.mammoth);
@@ -526,10 +599,12 @@ export async function docxToPdf(fileData, { title = 'Tài liệu Word', loadFont
   if (!blocks.some((b) => b.kind !== 'gap')) throw new Error('Tài liệu Word không có văn bản hoặc nội dung được bảo vệ.');
 
   const PDFLib = globalThis.PDFLib;
-  const fontBytes = (await loadFont?.([title, ...blocks.flatMap((b) => b.cells ?? [b.text ?? ''])])) ?? null;
+  const texts = [title, ...blocks.flatMap((b) => b.cells ?? (b.runs ?? []).map((r) => r.text))];
+  const used = new Set(['regular', ...blocks.flatMap((b) => (b.runs ?? []).map(fontVariant))]);
   const pdfDoc = await PDFLib.PDFDocument.create();
   pdfDoc.setTitle(title);
-  const { font, bold, clean } = await embedFonts(pdfDoc, fontBytes);
+  const fonts = await embedFonts(pdfDoc, await loadFonts(loadFont, texts, used));
+  const { clean } = fonts;
 
   const [pageWidth, pageHeight] = A4;
   const margin = 56;
@@ -537,6 +612,7 @@ export async function docxToPdf(fileData, { title = 'Tài liệu Word', loadFont
   const bodySize = 10.5;
   const ink = PDFLib.rgb(0.13, 0.13, 0.16);
   const headingInk = PDFLib.rgb(0.09, 0.2, 0.42);
+  const faint = PDFLib.rgb(0.45, 0.45, 0.5);
   const grid = PDFLib.rgb(0.8, 0.8, 0.84);
 
   let page = pdfDoc.addPage(A4);
@@ -546,41 +622,64 @@ export async function docxToPdf(fileData, { title = 'Tài liệu Word', loadFont
     page = pdfDoc.addPage(A4);
     y = pageHeight - margin;
   };
-  const lines = (s, f, size, width) => wrapText(clean(s), width, (t) => f.widthOfTextAtSize(t, size));
+  const cleanRuns = (runs) => runs.map((r) => ({ ...r, text: clean(r.text) }));
 
   for (const b of blocks) {
     if (b.kind === 'gap') {
       y -= 8;
       continue;
     }
+    if (b.kind === 'image') {
+      const data = await imageBytes(b.src);
+      const img = data && (await (data.png ? pdfDoc.embedPng(data.bytes) : pdfDoc.embedJpg(data.bytes)).catch(() => null));
+      if (!img) {
+        ensure(16);
+        page.drawText(clean(`[Không chuyển được ảnh${b.alt ? ` "${b.alt}"` : ''}: định dạng không hỗ trợ, ví dụ EMF/WMF]`), { x: margin, y: y - 10, size: 8.5, font: fonts.italic, color: faint });
+        y -= 18;
+        continue;
+      }
+      // 96 dpi pixels to points, shrunk to the text width and to 70% of the page height.
+      const scale = Math.min(0.75, usable / img.width, (pageHeight - 2 * margin) * 0.7 / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      ensure(h + 8);
+      page.drawImage(img, { x: margin, y: y - h, width: w, height: h });
+      y -= h + 10;
+      continue;
+    }
     if (b.kind === 'row') {
       const cols = Math.max(1, b.cells.length);
       const cw = usable / cols;
-      const cellLines = b.cells.map((c) => lines(c, font, 9.5, cw - 8));
+      const cellLines = b.cells.map((c) => wrapText(clean(c), cw - 8, (t) => fonts.regular.widthOfTextAtSize(t, 9.5)));
       const h = Math.max(1, ...cellLines.map((l) => l.length)) * 13 + 8;
       ensure(h);
       cellLines.forEach((ls, c) => {
         const x = margin + c * cw;
         page.drawRectangle({ x, y: y - h, width: cw, height: h, borderColor: grid, borderWidth: 0.5 });
-        ls.forEach((t, k) => page.drawText(t, { x: x + 4, y: y - 14 - k * 13, size: 9.5, font, color: ink }));
+        ls.forEach((t, k) => page.drawText(t, { x: x + 4, y: y - 14 - k * 13, size: 9.5, font: fonts.regular, color: ink }));
       });
       y -= h;
       continue;
     }
     const heading = b.kind === 'heading';
     const size = heading ? HEADING_SIZES[b.level] ?? 11 : bodySize;
-    const f = heading ? bold : font;
     const lh = size * 1.4;
     const indent = b.kind === 'item' ? 14 + b.depth * 16 : 0;
-    const textLines = lines(b.text, f, size, usable - indent - (b.kind === 'item' ? 12 : 0));
+    const measure = (t, style) => fonts.styled(style).widthOfTextAtSize(t, size);
+    const lines = wrapRuns(cleanRuns(b.runs), usable - indent - (b.kind === 'item' ? 12 : 0), measure);
     if (heading) {
       y -= 8;
-      ensure(lh * Math.min(2, textLines.length) + lh); // keep a heading with the text after it
+      ensure(lh * Math.min(2, lines.length) + lh); // keep a heading with the text after it
     }
-    textLines.forEach((t, k) => {
+    lines.forEach((pieces, k) => {
       ensure(lh);
-      if (k === 0 && b.kind === 'item') page.drawText(clean(b.marker), { x: margin + indent - 12, y: y - size, size, font, color: ink });
-      page.drawText(t, { x: margin + indent + (b.kind === 'item' ? 2 : 0), y: y - size, size, font: f, color: heading ? headingInk : ink });
+      if (k === 0 && b.kind === 'item') page.drawText(clean(b.marker), { x: margin + indent - 12, y: y - size, size, font: fonts.regular, color: ink });
+      let x = margin + indent + (b.kind === 'item' ? 2 : 0);
+      for (const p of pieces) {
+        const font = fonts.styled(p);
+        page.drawText(p.text, { x, y: y - size, size, font, color: heading ? headingInk : ink });
+        x += font.widthOfTextAtSize(p.text, size);
+      }
       y -= lh;
     });
     y -= heading ? 4 : b.kind === 'item' ? 2 : 6;
