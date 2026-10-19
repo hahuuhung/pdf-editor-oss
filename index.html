@@ -516,14 +516,21 @@
     .crop-shade { fill: rgba(15, 23, 42, 0.38); pointer-events: none; }
 
     /* Outline (bookmarks) panel */
-    .outline { list-style: none; margin: 0; padding: 0 0 0 14px; }
-    #outline-panel > .outline { padding-left: 0; }
-    .outline summary { display: flex; align-items: flex-start; list-style: none; cursor: pointer; }
-    .outline summary::-webkit-details-marker { display: none; }
-    .outline summary::before { content: "▸"; display: inline-block; flex: none; width: 14px; padding-top: 5px; font-size: 10px; color: var(--faint); transition: transform 0.15s; }
-    .outline details[open] > summary::before { transform: rotate(90deg); }
-    .ol-item { flex: 1; min-width: 0; justify-content: flex-start; padding: 4px 6px; text-align: left; white-space: normal; line-height: 1.35; color: var(--text); }
-    .ol-leaf > .ol-item { width: calc(100% - 14px); margin-left: 14px; }
+    .ol-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .ol-add { border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; color: var(--text); font-size: 12.5px; }
+    .ol-note { font-size: 11.5px; }
+    .ol-tree { display: flex; flex-direction: column; gap: 1px; }
+    .ol-row { display: flex; align-items: center; gap: 2px; padding-left: calc(var(--depth, 0) * 14px); border-radius: 6px; }
+    .ol-row:hover, .ol-row:focus-within { background: var(--hover); }
+    .ol-row.on { background: var(--selected); }
+    .ol-caret { flex: none; width: 18px; height: 24px; padding: 0; justify-content: center; font-size: 10px; color: var(--faint); }
+    .ol-item, .ol-item:hover { flex: 1; min-width: 0; justify-content: flex-start; padding: 4px; text-align: left; white-space: normal; line-height: 1.35; color: var(--text); background: transparent; }
+    .ol-row.on .ol-item { color: var(--accent-text); font-weight: 500; }
+    .ol-input { flex: 1; min-width: 0; height: 26px; padding: 0 6px; border: 1px solid var(--accent); border-radius: 6px; background: var(--field); color: var(--text); font: inherit; }
+    .ol-tools { display: none; flex: none; }
+    .ol-row:hover .ol-tools, .ol-row:focus-within .ol-tools, .ol-row.on .ol-tools { display: inline-flex; }
+    .ol-tools .icon { padding: 2px; }
+    .ol-tools svg { width: 15px; height: 15px; }
 
     @media (max-width: 640px) {
       .start { padding: 24px 16px 40px; }
@@ -541,6 +548,7 @@
   </style>
   <link rel="stylesheet" href="src/components/components.css" />
   <link rel="stylesheet" href="src/ribbon.css" />
+  <link rel="stylesheet" href="src/office/office.css" />
 </head>
 <body>
   <header class="rb-titlebar" id="titlebar"></header>

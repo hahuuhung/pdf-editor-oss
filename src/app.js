@@ -94,6 +94,9 @@ import {
   unreadCount,
 } from './account.js';
 import { exportPdf } from './export.js';
+import { OFFICE_TYPES, resizeOffice } from './office/index.js';
+import { OFFICE_DRAG_TOOLS, createOfficeUi } from './office/ui.js';
+import { loadOfficeFonts, measure as officeMeasure, officeFontBytes } from './office/measure.js';
 import { confirmDialog, el, field, icon, iconButton, isDialogOpen, openDialog, svgEl } from './dom.js';
 import { RIBBON_TABS, commandTool, detectPlatform, formatShortcut, ribbonCommandIds, tabForCommand, toolCommand } from './ribbon.js';
 import { closeContextMenus, createPanelLayout, createRibbon, createStatusBar, openContextMenu } from './ribbonbar.js';
@@ -113,6 +116,7 @@ const EMPTY_SETTINGS = Object.freeze({
   protection: null, // { userPassword, ownerPassword, allowPrint, allowCopy, allowModify } applied on save
   sanitize: false,
   ocrWords: [], // [{ page, text, x, y, w, h }] written as an invisible text layer
+  bookmarks: null, // edited outline (bookmarks.js) written on export; null keeps the file's own outline
 });
 
 // ---------- tools, actions, modes ----------
@@ -138,10 +142,14 @@ const TOOL_INFO = {
   check: { label: 'Dấu tích', icon: 'check', type: 'symbol', symbol: 'check' },
   cross: { label: 'Dấu chéo', icon: 'cross', type: 'symbol', symbol: 'cross' },
   dot: { label: 'Dấu chấm', icon: 'dot', type: 'symbol', symbol: 'dot' },
+  // Office tools (src/office/): drawn with the pointer; formulas and tables come from ACTIONS.
+  shape: { label: 'Hình vẽ', icon: 'shape' },
+  connector: { label: 'Đường nối', icon: 'connector' },
+  richtext: { label: 'Hộp chữ định dạng', icon: 'richtext' },
 };
-const TYPE_LABELS = { text: 'Chữ', image: 'Hình ảnh', symbol: 'Ký hiệu' };
-const DRAG_TOOLS = new Set(['highlight', 'underline', 'strike', 'squiggly', 'rect', 'oval', 'line', 'arrow', 'ink', 'link', 'redact']);
-const STROKE_TYPES = new Set(['underline', 'strike', 'squiggly', 'rect', 'oval', 'line', 'arrow', 'ink', 'stamp', 'symbol']);
+const TYPE_LABELS = { text: 'Chữ', image: 'Hình ảnh', symbol: 'Ký hiệu', formula: 'Công thức', table: 'Bảng' };
+const DRAG_TOOLS = new Set(['highlight', 'underline', 'strike', 'squiggly', 'rect', 'oval', 'line', 'arrow', 'ink', 'link', 'redact', ...OFFICE_DRAG_TOOLS]);
+const STROKE_TYPES = new Set(['underline', 'strike', 'squiggly', 'rect', 'oval', 'line', 'arrow', 'ink', 'stamp', 'symbol', 'shape', 'connector']);
 
 const typeLabel = (type) => TYPE_LABELS[type] ?? TOOL_INFO[type]?.label ?? type;
 const toolType = (tool) => TOOL_INFO[tool]?.type ?? tool;
@@ -217,6 +225,10 @@ const ACTIONS = {
   news: { label: 'Thông báo VET VIRAL', icon: 'bell', run: () => showPanel('news') },
   manageAccount: { label: 'Quản lý tài khoản VET VIRAL', icon: 'external', enabled: () => account.signedIn, run: () => openExternal(`${VETVIRAL_URL}/settings`) },
   logout: { label: 'Đăng xuất VET VIRAL', icon: 'logout', enabled: () => account.signedIn, run: logoutAccount },
+  insertFormula: { label: 'Chèn công thức…', icon: 'formula', needsDoc: true, run: () => office.insertFormula() },
+  insertTable: { label: 'Chèn bảng…', icon: 'table', needsDoc: true, run: () => office.insertTable() },
+  reversePages: { label: 'Đảo ngược thứ tự trang', icon: 'swap', needsDoc: true, run: reversePages },
+  addBookmark: { label: 'Thêm mục lục tại chỗ đang xem', icon: 'bookmark', needsDoc: true, run: addBookmarkHere },
 };
 
 // ---------- DOM and state ----------
@@ -285,6 +297,19 @@ const store = new EditorStore({
 const state = store.state;
 
 const account = new AccountClient({ storage: safeStorage() });
+
+// Shapes, connectors, formulas, tables and rich text (src/office/). `updateMark` replaces one mark as
+// an undo step.
+const office = createOfficeUi({
+  state,
+  commitMark: (draft) => commitMark(draft),
+  updateMark(id, next) {
+    const before = snap();
+    state.marks = state.marks.map((m) => (m.id === id ? sanitizeMark({ ...next, id }) : m));
+    pushHistory(before);
+    refresh();
+  },
+});
 
 let renderTimer = null;
 let ribbon = null; // created at startup (ribbonbar.js)
@@ -711,6 +736,7 @@ function renderDocument() {
 // ---------- overlays ----------
 
 function renderOverlays() {
+  state.marks = office.reroute(state.marks); // connectors follow the shapes they are glued to
   state.pageEls.forEach((_, i) => renderPageOverlay(i));
   paintSelection();
   renderProps();
@@ -781,6 +807,7 @@ function markElement(m) {
   const { x, y, w, h } = m;
   const bottom = y + h;
   const g = svgEl('g', { class: 'mark', 'data-id': m.id });
+  if (OFFICE_TYPES.has(m.type)) office.drawMark(g, m);
   switch (m.type) {
     case 'note':
       g.append(svgEl('rect', { x, y, width: NOTE_SIZE, height: NOTE_SIZE, rx: 2, fill: m.color, 'fill-opacity': m.opacity, stroke: '#000', 'stroke-opacity': 0.5, 'stroke-width': 0.5 }));
@@ -1014,6 +1041,7 @@ function cancelGesture() {
 }
 
 function draftFromGesture(g) {
+  if (OFFICE_DRAG_TOOLS.has(g.tool)) return office.draft(g);
   if (g.tool === 'ink') {
     const points = simplifyInk(g.pts);
     return points.length >= 2 ? { type: 'ink', page: g.page, points } : null;
@@ -1037,18 +1065,20 @@ function showPreview() {
   const node = markElement(sanitizeMark({ ...styleFor(draft.type), ...draft, id: 'preview' }));
   node.classList.add('preview');
   svg.append(node);
+  if (g.tool === 'connector') office.glueHints(svg, g.page);
 }
 
 function commitMark(draft) {
   const before = snap();
   const style = styleFor(draft.type);
-  const fill = draft.type === 'rect' || draft.type === 'oval' ? style.fill : null;
+  const fill = draft.type === 'rect' || draft.type === 'oval' || draft.type === 'shape' ? style.fill : null;
   const id = nextMarkId(state.marks);
   state.marks = addMark(state.marks, { ...style, text: '', ...draft, fill, id });
   pushHistory(before);
   state.selected = { kind: 'mark', id };
   refresh();
   if (draft.type === 'link') openLinkDialog(id);
+  office.afterCommit(id, draft.type);
   return id;
 }
 
@@ -1203,7 +1233,9 @@ function beginResize(e, id) {
     if (ev.pointerId !== start.pointerId) return;
     const rect = state.pageEls[m0.page].getBoundingClientRect();
     const k = state.pageSizes[m0.page].width / rect.width;
-    const next = resizeMark(m0, m0.w + (ev.clientX - start.x) * k, m0.h + (ev.clientY - start.y) * k, { keepAspect });
+    const w = m0.w + (ev.clientX - start.x) * k;
+    const h = m0.h + (ev.clientY - start.y) * k;
+    const next = OFFICE_TYPES.has(m0.type) ? sanitizeMark(resizeOffice(m0, w, h, officeMeasure)) : resizeMark(m0, w, h, { keepAspect });
     state.marks = state.marks.map((mk) => (mk.id === id ? next : mk));
     renderPageOverlay(m0.page);
     paintSelection();
@@ -1284,7 +1316,8 @@ function renderProps() {
       applyProp('opacity', Number(t.value) / 100);
     })), out);
   }
-  if (type === 'rect' || type === 'oval') {
+  row.push(...office.props(type, item, { setTool }));
+  if (type === 'rect' || type === 'oval' || type === 'shape') {
     const fillColor = bindEdit(el('input', { type: 'color', value: v.fill ?? '#ffffff', disabled: !v.fill, 'aria-label': 'Màu nền' }), (t) => applyProp('fill', t.value));
     const toggle = el('input', { type: 'checkbox', checked: !!v.fill });
     toggle.addEventListener('focus', () => (propEdit = snap()));
@@ -1579,6 +1612,7 @@ async function buildOutput(overrides = {}) {
     settings,
     rasterPages: raster,
     context: settingsContext(),
+    officeFonts: await officeFontBytes(state.marks),
   });
 }
 
@@ -1589,7 +1623,7 @@ async function bakePage(indices) {
   const marks = state.marks.filter((m) => pages.has(m.page));
   if (!boxes.length && !marks.length) return state.pdfBytes;
   const raster = await rasterizeRedactions(state.doc, marks);
-  return exportPdf(state.pdfBytes.slice(), boxes, { fontBytes: await fontFor(exportTexts(boxes, marks)), marks, rasterPages: raster });
+  return exportPdf(state.pdfBytes.slice(), boxes, { fontBytes: await fontFor(exportTexts(boxes, marks)), marks, rasterPages: raster, officeFonts: await officeFontBytes(marks) });
 }
 
 // Replaces the document bytes as one undo step. `remap` re-indexes everything tied to a page
@@ -1603,6 +1637,8 @@ async function applyBytes(bytes, before, { remap, current, order, changed } = {}
     state.marks = remap(state.marks);
     state.settings = { ...state.settings, ocrWords: remap(state.settings.ocrWords) };
   }
+  // Edited bookmarks follow their pages; the file's own outline follows them by itself.
+  if (order && state.settings.bookmarks) state.settings = { ...state.settings, bookmarks: remapBookmarks(state.settings.bookmarks, order) };
   if (current !== undefined) state.current = current;
   state.selected = null;
   await loadDocument(bytes, { order, changed });
@@ -2746,14 +2782,16 @@ async function closeDocument() {
 let fontError = null; // why the Unicode font could not be loaded, for the next status message
 
 // Font for text that Helvetica cannot write (most Vietnamese): the font chosen in Tệp › Chọn font,
-// else DejaVu Sans fetched on first need. Null when Helvetica is enough or the download failed.
-async function fontFor(texts) {
+// else DejaVu Sans in `variant` (regular, bold, italic, boldItalic) fetched on first need. Null when
+// Helvetica is enough or the download failed. A chosen font serves every variant.
+async function fontFor(texts, variant = 'regular') {
   if (state.fontBytes) return state.fontBytes;
   if (!needsUnicodeFont(texts)) return null;
   const status = els.status.textContent;
-  setStatus('Đang tải font tiếng Việt (DejaVu Sans, khoảng 740 KB, chỉ lần đầu)…');
+  const style = { regular: '', bold: ' Bold', italic: ' Oblique', boldItalic: ' Bold Oblique' }[variant] ?? '';
+  setStatus(`Đang tải font tiếng Việt (DejaVu Sans${style}, khoảng 700 KB, chỉ lần đầu)…`);
   try {
-    const bytes = await loadUnicodeFont();
+    const bytes = await loadUnicodeFont(variant);
     setStatus(status);
     return bytes;
   } catch (err) {
@@ -3185,57 +3223,197 @@ function openPageNumbersDialog() {
 
 // ---------- outline (bookmarks) ----------
 
-async function loadOutline(doc) {
+// The panel shows the file's own outline (state.outline) until the first edit; from then on the edited
+// list lives in state.settings.bookmarks (undoable, written into the PDF on export). See bookmarks.js.
+let outlineSelected = null; // id of the selected entry
+let outlineEditing = null; // id of the entry being renamed
+const outlineCollapsed = new Set();
+const bookmarksNow = () => state.settings.bookmarks ?? state.outline ?? [];
+
+// Page and point of a pdf.js destination ({ page: null } when it cannot be resolved).
+async function resolveDest(doc, dest) {
   try {
-    state.outline = await doc.getOutline();
+    const d = typeof dest === 'string' ? await doc.getDestination(dest) : dest;
+    if (!Array.isArray(d) || !d.length) return { page: null };
+    const page = typeof d[0] === 'object' ? await doc.getPageIndex(d[0]) : Number(d[0]);
+    const kind = d[1]?.name;
+    if (kind === 'XYZ') return { page, left: d[2], top: d[3] };
+    if (kind === 'FitH' || kind === 'FitBH') return { page, top: d[2] };
+    return { page };
   } catch {
-    state.outline = null;
+    return { page: null };
   }
+}
+
+// The file's outline as editable entries, every destination resolved to a page and a point.
+async function loadOutline(doc) {
+  let items = null;
+  try {
+    items = await doc.getOutline();
+  } catch {
+    items = null;
+  }
+  const resolve = (list) => Promise.all((list ?? []).map(async (it) => ({ title: it.title, url: safeUrl(it.url ?? ''), ...(await resolveDest(doc, it.dest)), items: await resolve(it.items) })));
+  const flat = flattenOutline(await resolve(items));
+  if (doc !== state.doc) return; // another document was opened meanwhile
+  state.outline = flat;
   if (state.panel === 'outline') renderOutline();
+}
+
+// One undo step; the first edit starts from a copy of the file's outline.
+function editBookmarks(next) {
+  if (next === bookmarksNow()) return renderOutline();
+  updateSettings({ bookmarks: next });
+}
+
+const bookmarkIndex = (id) => bookmarksNow().findIndex((b) => b.id === id);
+
+// The page and the PDF point at the top of the view, where a new bookmark points. The page comes
+// from the scroll offset, which is up to date even while the current page is still following a scroll.
+async function viewPosition() {
+  const scrolled = els.view.scrollTop;
+  let i = 0;
+  state.pageEls.forEach((div, k) => {
+    if (div.offsetTop <= scrolled + 1) i = k;
+  });
+  const div = state.pageEls[i];
+  const y = div ? clamp((scrolled - div.offsetTop) / state.zoom, 0, state.pageSizes[i].height) : 0;
+  const [left, top] = (await state.doc.getPage(i + 1)).getViewport({ scale: 1 }).convertToPdfPoint(0, y);
+  return { page: i, left: Math.round(left * 100) / 100, top: Math.round(top * 100) / 100 };
+}
+
+// Adds a bookmark to the place being viewed, after the selected one (else in page order), and opens
+// it for renaming.
+async function addBookmarkHere() {
+  if (!state.doc) return;
+  const pos = await viewPosition();
+  const list = bookmarksNow();
+  const selected = bookmarkIndex(outlineSelected);
+  const id = nextBookmarkId(list);
+  outlineSelected = id;
+  outlineEditing = id;
+  if (state.panel !== 'outline') showPanel('outline');
+  editBookmarks(insertBookmark(list, { id, title: `Trang ${pos.page + 1}`, ...pos, depth: 0, url: '' }, selected >= 0 ? selected : bookmarkSlot(list, pos.page)));
+  setStatus('Đã thêm mục lục. Gõ tên rồi nhấn Enter; mục lục được ghi vào tệp khi xuất.');
+}
+
+// Scrolls to a bookmark's page and point, or opens its web link.
+async function goToBookmark(b) {
+  if (b.url) {
+    const url = safeUrl(b.url);
+    return url ? openExternal(url) : setStatus('Liên kết trong mục lục không an toàn, đã bỏ qua.', true);
+  }
+  const div = b.page === null ? null : state.pageEls[b.page];
+  if (!div) return setStatus('Mục này không trỏ tới trang nào trong tài liệu.');
+  let y = 0;
+  if (b.top !== null) {
+    const page = await state.doc.getPage(b.page + 1);
+    y = Math.max(0, page.getViewport({ scale: 1 }).convertToViewportPoint(b.left ?? 0, b.top)[1]);
+  }
+  scrollViewTo(div.offsetTop + y * state.zoom - 12, b.page);
 }
 
 function renderOutline() {
   const panel = els.outlinePanel;
   panel.replaceChildren();
-  if (!state.doc) return panel.append(el('p', { class: 'lbl empty-note' }, 'Mở một tệp PDF để xem mục lục.'));
-  if (!state.outline?.length) return panel.append(el('p', { class: 'lbl empty-note' }, 'Tài liệu này không có mục lục (bookmark).'));
-  panel.append(outlineList(state.outline, 0));
-}
-
-function outlineList(items, depth) {
-  return el('ul', { class: 'outline' }, items.map((it) => {
-    const link = el('button', { class: 'ol-item', title: it.title, onclick: (e) => {
-      e.preventDefault(); // inside <summary>: go to the entry without folding it
-      goToOutline(it);
-    } }, it.title || '(không tên)');
-    if (!it.items?.length) return el('li', { class: 'ol-leaf' }, link);
-    return el('li', {}, el('details', { open: depth < 1 }, el('summary', {}, link), outlineList(it.items, depth + 1)));
-  }));
-}
-
-// Scrolls to an outline entry: its page and, for XYZ/FitH destinations, the height it points to.
-async function goToOutline(item) {
-  try {
-    if (item.url) {
-      const url = safeUrl(item.url);
-      return url ? openExternal(url) : setStatus('Liên kết trong mục lục không an toàn, đã bỏ qua.', true);
-    }
-    const dest = typeof item.dest === 'string' ? await state.doc.getDestination(item.dest) : item.dest;
-    if (!Array.isArray(dest) || !dest.length) return setStatus('Mục này không trỏ tới trang nào.');
-    const index = typeof dest[0] === 'object' ? await state.doc.getPageIndex(dest[0]) : Number(dest[0]);
-    const div = state.pageEls[index];
-    if (!div) return setStatus('Mục này trỏ tới trang không còn trong tài liệu.');
-    const kind = dest[1]?.name;
-    const top = kind === 'XYZ' ? dest[3] : kind === 'FitH' || kind === 'FitBH' ? dest[2] : null;
-    let y = 0;
-    if (typeof top === 'number') {
-      const page = await state.doc.getPage(index + 1);
-      y = Math.max(0, page.getViewport({ scale: 1 }).convertToViewportPoint(kind === 'XYZ' ? dest[2] ?? 0 : 0, top)[1]);
-    }
-    scrollViewTo(div.offsetTop + y * state.zoom - 12, index);
-  } catch {
-    setStatus('Không mở được mục này.', true);
+  if (!state.doc) return panel.append(el('p', { class: 'lbl empty-note' }, 'Mở một tệp PDF để xem và sửa mục lục.'));
+  const list = bookmarksNow();
+  panel.append(el('div', { class: 'ol-head' },
+    el('button', { class: 'ol-add', title: 'Thêm mục trỏ tới chỗ đang xem', onclick: addBookmarkHere }, icon('bookmark', 15), 'Thêm mục'),
+    state.settings.bookmarks ? el('span', { class: 'faint ol-note' }, 'Ghi vào tệp khi xuất') : null,
+  ));
+  if (!list.length) return panel.append(el('p', { class: 'lbl empty-note' }, 'Tài liệu chưa có mục lục. Cuộn tới chỗ cần đánh dấu rồi bấm Thêm mục.'));
+  const tree = el('div', { class: 'ol-tree', role: 'tree', 'aria-label': 'Mục lục' });
+  for (const i of visibleIndices(list, outlineCollapsed)) tree.append(outlineRow(list, i));
+  panel.append(tree);
+  const input = panel.querySelector('.ol-input');
+  if (input) {
+    input.focus();
+    input.select();
   }
+}
+
+function outlineRow(list, i) {
+  const b = list[i];
+  const parent = list[i + 1]?.depth > b.depth;
+  const folded = outlineCollapsed.has(b.id);
+  const row = el('div', { class: `ol-row${b.id === outlineSelected ? ' on' : ''}`, role: 'treeitem', 'aria-level': b.depth + 1, 'aria-expanded': parent ? String(!folded) : null, style: `--depth:${b.depth}` });
+  const caret = parent
+    ? el('button', { class: 'ol-caret', title: folded ? 'Mở rộng' : 'Thu gọn', 'aria-label': folded ? 'Mở rộng' : 'Thu gọn', onclick: () => {
+      if (folded) outlineCollapsed.delete(b.id);
+      else outlineCollapsed.add(b.id);
+      renderOutline();
+    } }, folded ? '▸' : '▾')
+    : el('span', { class: 'ol-caret' });
+  const startRename = () => {
+    outlineSelected = b.id;
+    outlineEditing = b.id;
+    renderOutline();
+  };
+
+  let label;
+  if (b.id === outlineEditing) {
+    label = el('input', { class: 'ol-input', type: 'text', value: b.title, 'aria-label': 'Tên mục lục' });
+    let done = false;
+    const finish = (save) => {
+      if (done) return;
+      done = true;
+      outlineEditing = null;
+      const title = label.value.trim();
+      if (save && title && title !== b.title) editBookmarks(renameBookmark(bookmarksNow(), bookmarkIndex(b.id), title));
+      else renderOutline();
+    };
+    label.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // keys belong to the text field, not the editor shortcuts
+      if (e.key === 'Enter') finish(true);
+      else if (e.key === 'Escape') finish(false);
+    });
+    label.addEventListener('blur', () => finish(true));
+  } else {
+    label = el('button', { class: 'ol-item', title: b.url || b.title, ondblclick: startRename, onclick: () => {
+      outlineSelected = b.id;
+      renderOutline();
+      goToBookmark(b);
+    } }, b.title || '(không tên)');
+  }
+
+  // Each tool acts on this entry, found again by id since the list may have changed.
+  const tool = (name, title, edit) => iconButton(name, title, (e) => {
+    e.stopPropagation();
+    outlineSelected = b.id;
+    editBookmarks(edit(bookmarksNow(), bookmarkIndex(b.id)));
+  });
+  const tools = el('span', { class: 'ol-tools' },
+    iconButton('pencil', 'Đổi tên (F2)', startRename),
+    tool('up', 'Đưa lên', (l, k) => moveBookmark(l, k, -1)),
+    tool('down', 'Đưa xuống', (l, k) => moveBookmark(l, k, 1)),
+    tool('prev', 'Lên một cấp', (l, k) => indentBookmark(l, k, -1)),
+    tool('next', 'Thành mục con của mục trên', (l, k) => indentBookmark(l, k, 1)),
+    tool('trash', 'Xóa mục và các mục con (Del)', removeBookmark),
+  );
+  row.addEventListener('keydown', (e) => {
+    if (b.id === outlineEditing || (e.key !== 'F2' && e.key !== 'Delete')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'F2') startRename();
+    else editBookmarks(removeBookmark(bookmarksNow(), bookmarkIndex(b.id)));
+  });
+  row.append(caret, label, tools);
+  return row;
+}
+
+// Reverses the order of the pages selected in the thumbnails, or of the whole document.
+function reversePages() {
+  const picked = selectedPages();
+  const pages = picked.length > 1 ? picked : state.pageSizes.map((_, i) => i);
+  if (pages.length < 2) return setStatus('Tài liệu chỉ có một trang.');
+  const order = reverseOrder(state.pageSizes.length, pages);
+  return withBusy('Đang đảo thứ tự trang…', async () => {
+    const before = snap();
+    const bytes = await reorderPages(state.pdfBytes, order);
+    await applyBytes(bytes, before, { remap: (items) => remapOrder(items, order), current: order.indexOf(state.current), order });
+    setStatus(`Đã đảo thứ tự ${picked.length > 1 ? `${pages.length} trang đã chọn` : `cả ${pages.length} trang`}. Ctrl+Z để hoàn tác.`);
+  });
 }
 
 // ---------- dialogs ----------
@@ -3592,17 +3770,19 @@ async function loadDocument(bytes, { fresh = false, order = null, changed = [] }
   renderDocument();
 }
 
+// Opens PDF bytes as a new document. If they cannot be read, the document that was open stays open.
 async function openBytes(bytes, name) {
-  state.pdfBytes = bytes;
-  state.fileName = name;
-  state.boxes = [];
-  state.marks = [];
-  state.settings = EMPTY_SETTINGS;
-  store.clearHistory();
-  state.selected = null;
-  state.search = { query: '', caseSensitive: false, hits: [], index: -1 };
+  const previous = { pdfBytes: state.pdfBytes, fileName: state.fileName, boxes: state.boxes, marks: state.marks, settings: state.settings, selected: state.selected, search: state.search };
+  Object.assign(state, { pdfBytes: bytes, fileName: name, boxes: [], marks: [], settings: EMPTY_SETTINGS, selected: null, search: { query: '', caseSensitive: false, hits: [], index: -1 } });
   showStart(false); // the page view must have its size before fitting the zoom
-  await loadDocument(bytes, { fresh: true });
+  try {
+    await loadDocument(bytes, { fresh: true });
+  } catch (err) {
+    Object.assign(state, previous);
+    showStart(!state.doc);
+    throw err;
+  }
+  store.clearHistory();
   setStatus(`Đã mở ${name} (${state.pageSizes.length} trang).`);
 }
 
@@ -3836,6 +4016,8 @@ for (const id of ['rotateLeft', 'rotateRight', 'movePageUp', 'movePageDown', 'in
 }
 
 els.thumbs.store = store;
+// The office tools measure text in the export font; redraw once it has loaded.
+loadOfficeFonts().then((ok) => ok && state.doc && state.marks.some((m) => OFFICE_TYPES.has(m.type)) && refresh());
 els.view.store = store;
 store.on(EVENTS.pagesUpdated, ({ pageSizes }) => {
   const count = document.getElementById('page-count');

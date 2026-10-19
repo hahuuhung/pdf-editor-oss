@@ -86,6 +86,22 @@ export const ICONS = {
   comments: '<path d="M4 4h16v12H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
   swap: '<path d="M7 4v16M3.5 16.5L7 20l3.5-3.5M17 20V4M13.5 7.5L17 4l3.5 3.5"/>',
   pencil: '<path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/>',
+  // office tools
+  shape: '<rect x="3" y="11" width="9" height="9" rx="1"/><circle cx="16" cy="8" r="5"/>',
+  connector: '<rect x="2" y="3" width="7" height="6" rx="1"/><rect x="15" y="15" width="7" height="6" rx="1"/><path d="M9 6h4v12h2"/>',
+  formula: '<path d="M18 5H7l6 7-6 7h11"/>',
+  table: '<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9.5h18M3 15h18M9 4v16M15 4v16"/>',
+  richtext: '<path d="M4 6h10M4 10h16M4 14h16M4 18h10"/><path d="M17 3l3 3-3 3" stroke-width="1.4"/>',
+  bold: '<path d="M7 4h6a4 4 0 010 8H7zM7 12h7a4 4 0 010 8H7z"/>',
+  italic: '<path d="M10 4h8M6 20h8M14 4l-4 16"/>',
+  textColor: '<path d="M6 16l6-13 6 13M8.5 11h7"/><path d="M4 20h16" stroke-width="3"/>',
+  alignLeft: '<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>',
+  alignCenter: '<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>',
+  alignRight: '<path d="M4 6h16M10 10h10M4 14h16M10 18h10"/>',
+  alignJustify: '<path d="M4 6h16M4 10h16M4 14h16M4 18h16"/>',
+  listBullet: '<circle cx="5" cy="7" r="1.2" fill="currentColor"/><circle cx="5" cy="12" r="1.2" fill="currentColor"/><circle cx="5" cy="17" r="1.2" fill="currentColor"/><path d="M9 7h11M9 12h11M9 17h11"/>',
+  listNumber: '<path d="M4 5h1.5v4M4 9h3M4 14.5c0-1 2.8-1 2.8 0S4 16.5 4 18h3M10 7h10M10 12h10M10 17h10"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/>',
 };
 
 export function icon(name, size = 18) {

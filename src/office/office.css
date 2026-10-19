@@ -1,0 +1,94 @@
+/* Office tools (src/office/): page drawing hints and the formula, table and rich text editors. */
+
+.glue-hint { fill: #fff; stroke: var(--border-focus, #2563eb); stroke-width: 1.2; vector-effect: non-scaling-stroke; pointer-events: none; }
+.office-empty { fill: none; stroke: var(--border-focus, #2563eb); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.office-error { font-family: system-ui, sans-serif; }
+
+.office-code {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 8px;
+  background: var(--surface-card, var(--field));
+  color: var(--text-main, var(--text));
+  font: 13px/1.5 ui-monospace, Consolas, "Courier New", monospace;
+}
+.office-code:focus { outline: none; border-color: var(--border-focus, var(--accent)); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16); }
+.office-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 72px;
+  max-height: 260px;
+  overflow: auto;
+  margin: 4px 0 10px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 8px;
+  color: #000;
+}
+.office-preview svg { max-width: 100%; height: auto; }
+.office-examples { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px; max-height: 160px; overflow-y: auto; }
+.office-examples button { justify-content: flex-start; gap: 8px; padding: 4px 8px; border: 1px solid var(--border-subtle, var(--border)); border-radius: 6px; font-size: 12px; white-space: normal; text-align: left; color: var(--text-main, var(--text)); }
+.office-examples code { font: 12px ui-monospace, Consolas, monospace; color: var(--accent-text); }
+.office-examples span { color: var(--text-muted, var(--muted)); }
+
+.office-grid-wrap { max-height: 280px; overflow: auto; margin: 6px 0 10px; border: 1px solid var(--border-subtle, var(--border)); border-radius: 8px; }
+.office-grid { display: grid; gap: 0; min-width: max-content; }
+.office-grid .office-head {
+  position: sticky;
+  top: 0;
+  padding: 3px 6px;
+  background: var(--surface-subtle, var(--hover));
+  color: var(--text-muted, var(--muted));
+  font-size: 11px;
+  text-align: center;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+}
+.office-grid input {
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-right: 1px solid var(--border-subtle, var(--border));
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  border-radius: 0;
+  background: var(--surface-card, var(--field));
+  color: var(--text-main, var(--text));
+  font: 12.5px system-ui, sans-serif;
+}
+.office-grid input:focus { outline: 2px solid var(--border-focus, var(--accent)); outline-offset: -2px; }
+.office-grid input.error { color: #c62828; }
+
+.office-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 4px; margin-bottom: 6px; border: 1px solid var(--border-subtle, var(--border)); border-radius: 8px; background: var(--surface-subtle, var(--hover)); }
+.office-toolbar .lbl { font-size: 12px; margin-left: 6px; }
+.office-toolbar input[type="number"] { width: 56px; height: 26px; }
+.office-toolbar select { height: 26px; }
+.office-color { display: inline-flex; align-items: center; }
+.office-color input[type="color"] { width: 22px; height: 22px; padding: 0; border: 0; background: none; }
+.office-richtext {
+  min-height: 160px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 8px;
+  background: #fff;
+  color: #000;
+  outline: none;
+  white-space: pre-wrap;
+}
+.office-richtext:focus { border-color: var(--border-focus, var(--accent)); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16); }
+.office-richtext [data-list] { position: relative; padding-left: 1.5em; }
+.office-richtext [data-list="bullet"]::before { content: "•"; position: absolute; left: 0.4em; }
+.office-richtext { counter-reset: office-list; }
+.office-richtext [data-list="number"] { counter-increment: office-list; }
+.office-richtext [data-list="number"]::before { content: counter(office-list) "."; position: absolute; left: 0; }
+/* Numbering restarts after any paragraph that is not numbered, as in the page layout. */
+.office-richtext div:not([data-list="number"]) { counter-reset: office-list; }
+
+.shape-gallery { display: inline-flex; flex-wrap: wrap; gap: 1px; max-width: 520px; }
+.shape-gallery button { padding: 3px; }

@@ -1,15 +1,19 @@
 // Pure model for markup: highlights, underlines, shapes, ink and sticky notes. No DOM, no PDF library.
 // Coordinates are PDF points at scale 1, origin at the page's top-left corner (same as model.js).
 // Default colors and widths follow the comment styles of PDF-XChange-like editors; see THIRD_PARTY.md.
+// Shapes, connectors, formulas, tables and rich text come from the office tools (office/index.js)
+// and keep their own fields in `data`.
+
+import { OFFICE_RESIZABLE, OFFICE_TYPES, sanitizeOfficeData } from './office/index.js';
 
 export const MARK_TYPES = [
   'note', 'highlight', 'underline', 'strike', 'squiggly', 'rect', 'oval', 'line', 'arrow', 'ink',
-  'stamp', 'image', 'link', 'redact', 'symbol',
+  'stamp', 'image', 'link', 'redact', 'symbol', ...OFFICE_TYPES,
 ];
 export const NOTE_SIZE = 18;
 
 // Marks drawn inside an x/y/w/h box; these can be resized from their bottom-right corner.
-export const RESIZABLE_TYPES = ['highlight', 'underline', 'strike', 'squiggly', 'rect', 'oval', 'stamp', 'image', 'link', 'redact', 'symbol'];
+export const RESIZABLE_TYPES = ['highlight', 'underline', 'strike', 'squiggly', 'rect', 'oval', 'stamp', 'image', 'link', 'redact', 'symbol', ...OFFICE_RESIZABLE];
 export const SYMBOLS = ['check', 'cross', 'dot'];
 export const STAMP_LABELS = ['APPROVED', 'DRAFT', 'CONFIDENTIAL', 'FINAL', 'NOT APPROVED', 'ĐÃ DUYỆT', 'BẢN NHÁP', 'MẬT', 'ĐÃ KÝ'];
 
@@ -29,6 +33,11 @@ export const MARK_DEFAULTS = {
   link: { color: '#1b63e0', width: 1, opacity: 1, fill: null },
   redact: { color: '#000000', width: 1, opacity: 1, fill: null },
   symbol: { color: '#000000', width: 1.5, opacity: 1, fill: null },
+  shape: { color: '#1d4ed8', width: 1.5, opacity: 1, fill: '#dbeafe' },
+  connector: { color: '#334155', width: 1.5, opacity: 1, fill: null },
+  formula: { color: '#000000', width: 1, opacity: 1, fill: null },
+  table: { color: '#000000', width: 1, opacity: 1, fill: null },
+  richtext: { color: '#000000', width: 1, opacity: 1, fill: null },
 };
 
 const IMAGE_SRC = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/;
@@ -76,6 +85,7 @@ export function sanitizeMark(m) {
     label: type === 'symbol' ? (SYMBOLS.includes(m.label) ? m.label : 'check') : typeof m.label === 'string' ? m.label.slice(0, 80) : '',
     src: typeof m.src === 'string' && IMAGE_SRC.test(m.src) ? m.src : '',
     url: safeUrl(m.url),
+    data: OFFICE_TYPES.has(type) ? sanitizeOfficeData(type, m.data) : null,
   };
 }
 
@@ -95,7 +105,7 @@ export function normalizeRect(x1, y1, x2, y2) {
 // Axis-aligned box that contains a mark, used for selection outlines.
 export function markBounds(m) {
   if (m.type === 'note') return { x: m.x, y: m.y, w: NOTE_SIZE, h: NOTE_SIZE };
-  if (m.type === 'line' || m.type === 'arrow' || m.type === 'ink') {
+  if (m.type === 'line' || m.type === 'arrow' || m.type === 'ink' || m.type === 'connector') {
     if (m.points.length === 0) return { x: m.x, y: m.y, w: 0, h: 0 };
     const xs = m.points.map((p) => p[0]);
     const ys = m.points.map((p) => p[1]);

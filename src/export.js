@@ -13,6 +13,8 @@ import { normalizeRotation, rectViewToPdf, viewSize, viewToPdf } from './geometr
 import { formatTokens, headerFooterContext, sanitizeHeaderFooter, sanitizeMeta, sanitizeWatermark } from './docsettings.js';
 import { stripDiacritics } from './textlayout.js';
 import { outlineTree } from './bookmarks.js';
+import { OFFICE_TYPES, drawOpsPdf, officeOps } from './office/index.js';
+import { measure as officeMeasure } from './office/measure.js';
 
 const LINE_HEIGHT = 1.2;
 
@@ -346,7 +348,7 @@ function applyForm(doc, values, flatten, font) {
  *   rasterPages   Map(pageIndex -> { png, width, height }) from redact.js
  *   context       { file, date } for header/footer tokens
  */
-export async function exportPdf(pdfBytes, boxes, { fontBytes, marks = [], settings = {}, rasterPages, context = {} } = {}) {
+export async function exportPdf(pdfBytes, boxes, { fontBytes, marks = [], settings = {}, rasterPages, context = {}, officeFonts = null } = {}) {
   // pdf-lib stamps its own producer and dates on load unless told not to; sanitizing keeps them out.
   const doc = await PDFLib.PDFDocument.load(pdfBytes, { updateMetadata: !settings.sanitize });
 
@@ -377,9 +379,37 @@ export async function exportPdf(pdfBytes, boxes, { fontBytes, marks = [], settin
 
   const pages = doc.getPages().map(pageContext);
 
+  // Shapes, formulas, tables and rich text are drawn from the same ops as on screen, with the
+  // DejaVu variants they were measured with (`officeFonts`: variant -> font bytes).
+  const office = { regular };
+  if (officeFonts) {
+    doc.registerFontkit(fontkit);
+    for (const [variant, bytes] of Object.entries(officeFonts)) office[variant] = await doc.embedFont(bytes, { subset: true });
+  }
+  const officeEncode = (text, font) => {
+    if (officeFonts) return text;
+    try {
+      font.encodeText(text);
+      return text;
+    } catch {
+      return stripDiacritics(text); // Helvetica without the Unicode font: keep the letters, drop the accents
+    }
+  };
+
   for (const m of clean) {
     const pc = pages[m.page];
-    if (pc) drawMark(pc, m, { bold, images });
+    if (!pc) continue;
+    if (OFFICE_TYPES.has(m.type)) {
+      let ops = [];
+      try {
+        ops = officeOps(m, officeMeasure);
+      } catch {
+        // a formula that does not parse is left out, as it shows an error on screen
+      }
+      drawOpsPdf(pc, ops, office, officeEncode);
+    } else {
+      drawMark(pc, m, { bold, images });
+    }
   }
 
   for (const raw of boxes) {
