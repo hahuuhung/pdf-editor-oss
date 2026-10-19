@@ -67,6 +67,14 @@ export const ICONS = {
   refresh: '<path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/>',
   excel: '<path d="M6 3h8l4 4v14H6z"/><path d="M8.5 11l4 6M12.5 11l-4 6"/>',
   sync: '<path d="M21 12a9 9 0 00-9-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5M3 12a9 9 0 009 9 9.75 9.75 0 006.74-2.74L21 16"/><path d="M16 16h5v5"/>',
+  bolt: '<path d="M13 2L4.5 13.5H11L10 22l8.5-11.5H12z"/>',
+  split: '<path d="M6 10V3h8l4 4v3M6 17v4h12v-4"/><path d="M3 13.5h18" stroke-dasharray="2.5 2.5"/>',
+  crop: '<path d="M7 3v14h14M3 7h14v14"/>',
+  hash: '<path d="M10 4L8 20M16 4l-2 16M5 9h15M4 15h15"/>',
+  pages: '<rect x="3" y="4" width="8" height="11" rx="1"/><rect x="13" y="4" width="8" height="11" rx="1"/><path d="M3 19h18"/>',
+  unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 017.6-1.7"/>',
+  bookmark: '<path d="M6 3h12v18l-6-4.5L6 21z"/>',
+  upload: '<path d="M12 16V4M7 9l5-5 5 5M4 15v5h16v-5"/>',
   hand: '<path d="M8 13V5.5a1.5 1.5 0 013 0V12M11 11V4a1.5 1.5 0 013 0v7M14 11V5.5a1.5 1.5 0 013 0V14c0 4-2.5 7-6.5 7-2.5 0-4-1.2-5.5-3.5L3.2 14a1.5 1.5 0 012.5-1.6L8 15"/>',
 };
 

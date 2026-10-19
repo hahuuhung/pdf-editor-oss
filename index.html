@@ -5,27 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PDF Editor</title>
   <style>
-    /* Color tokens follow the light/dark palette of storytold/pdfcraft (MIT OR Apache-2.0). See THIRD_PARTY.md. */
+    /* Light tokens are the project's white theme (CLAUDE.md); dark tokens follow the palette of
+       storytold/pdfcraft (MIT OR Apache-2.0), see THIRD_PARTY.md. */
     :root {
-      --titlebar: #e9e9eb;
+      --titlebar: #ffffff;
       --chrome: #ffffff;
-      --pasteboard: #f1f1f3;
+      --pasteboard: #f4f4f5;
       --card: #ffffff;
-      --border: #dadade;
-      --divider: #e8e8eb;
-      --text: #222226;
-      --muted: #5e5e66;
-      --faint: #6b6b73;
-      --icon: #44444b;
-      --hover: #f0f0f3;
-      --pressed: #e4e4e9;
-      --selected: #e6eefd;
-      --accent: #1b63e0;
-      --accent-text: #1755c4;
-      --accent-soft: #e3ecfd;
+      --subtle: #f8fafc;
+      --border: #e4e4e7;
+      --divider: #ececef;
+      --text: #0f172a;
+      --muted: #64748b;
+      --faint: #71717a;
+      --icon: #3f3f46;
+      --hover: #f4f4f5;
+      --pressed: #e4e4e7;
+      --selected: #eff6ff;
+      --accent: #2563eb;
+      --accent-text: #1d4ed8;
+      --accent-soft: #dbeafe;
       --field: #ffffff;
       --danger: #b42318;
-      --shadow: rgba(0, 0, 0, 0.14);
+      --shadow: rgba(15, 23, 42, 0.1);
       --blue: #3a6fe8;
       --orange: #e88a1a;
       --pink: #d63b8f;
@@ -53,6 +55,7 @@
         --accent-text: #8cb6fa;
         --accent-soft: #243657;
         --field: #1e1e22;
+        --subtle: #222226;
         --danger: #f97066;
         --shadow: rgba(0, 0, 0, 0.5);
       }
@@ -75,8 +78,23 @@
       --accent-text: #8cb6fa;
       --accent-soft: #243657;
       --field: #1e1e22;
+      --subtle: #222226;
       --danger: #f97066;
       --shadow: rgba(0, 0, 0, 0.5);
+    }
+
+    /* Names from pdf_editor_completion_plan.md, used by the components; they follow the theme above. */
+    :root {
+      --surface-canvas: var(--pasteboard);
+      --surface-card: var(--card);
+      --surface-subtle: var(--subtle);
+      --border-subtle: var(--border);
+      --border-focus: var(--accent);
+      --text-main: var(--text);
+      --text-muted: var(--muted);
+      --accent-primary: var(--accent);
+      --drop-indicator: var(--accent);
+      --snap-guide: #06b6d4;
     }
 
     * { box-sizing: border-box; }
@@ -547,6 +565,59 @@
     }
     .dropzone:hover, .dropzone.dragover { border-color: var(--accent); background: var(--selected); }
 
+    /* Start screen and quick tools */
+    .start { flex: 1; min-width: 0; overflow-y: auto; padding: 40px 32px 56px; background: var(--subtle); }
+    .start-hero, .start > .qt { max-width: 1080px; margin: 0 auto; }
+    .start-hero { margin-bottom: 8px; }
+    .start-hero h1 { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; font-size: 26px; font-weight: 650; letter-spacing: -0.01em; color: var(--text); }
+    .pro { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: #fff; background: linear-gradient(135deg, var(--accent), var(--purple)); border-radius: 6px; padding: 3px 7px; }
+    .start-sub { margin: 0 0 18px; color: var(--muted); font-size: 14px; }
+    .start-drop { display: flex; align-items: center; gap: 12px; padding: 18px 20px; border: 1.5px dashed var(--border); border-radius: 12px; background: var(--card); color: var(--muted); font-size: 14px; }
+    .start-drop .grow { flex: 1; }
+    .start-drop button { border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px; color: var(--text); }
+    .start-drop button.primary { border-color: var(--accent); color: #fff; }
+    .qt-group { margin-top: 24px; }
+    .qt-title { margin: 0 0 10px; font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); }
+    .qt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+    .qt-card { display: flex; align-items: flex-start; gap: 12px; padding: 14px; text-align: left; white-space: normal; background: var(--card); border: 1px solid var(--border); border-radius: 12px; color: var(--text); transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s; }
+    .qt-card:hover { background: var(--card); border-color: var(--accent); box-shadow: 0 4px 16px var(--shadow); transform: translateY(-1px); }
+    .qt-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .qt-ico { flex: none; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; color: var(--hue); background: color-mix(in srgb, var(--hue) 13%, transparent); }
+    .qt-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .qt-label { font-size: 13.5px; font-weight: 600; }
+    .qt-desc { font-size: 12px; line-height: 1.4; color: var(--muted); }
+    .dlg .qt-group:first-child { margin-top: 2px; }
+    .dlg .qt-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+
+    /* Split, merge, crop dialogs */
+    .split-preview { margin: 4px 0 6px; padding: 8px 10px; font-size: 12px; color: var(--muted); background: var(--subtle); border: 1px solid var(--border); border-radius: 8px; }
+    .split-preview:empty { display: none; }
+    .merge-list { display: flex; flex-direction: column; gap: 4px; margin: 10px 0 4px; max-height: 260px; overflow-y: auto; }
+    .merge-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+    .merge-num { width: 18px; flex: none; text-align: right; font-size: 12px; color: var(--faint); }
+    .merge-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .merge-row .faint { flex: none; font-size: 12px; }
+    .merge-row .icon { padding: 3px; }
+    .radio-row { display: flex; flex-wrap: wrap; gap: 16px; margin: 6px 0 10px; }
+    .crop-sides { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 12px; }
+    .dlg-btn { border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; color: var(--text); margin-bottom: 6px; }
+    .crop-shade { fill: rgba(15, 23, 42, 0.38); pointer-events: none; }
+
+    /* Outline (bookmarks) panel */
+    .outline { list-style: none; margin: 0; padding: 0 0 0 14px; }
+    #outline-panel > .outline { padding-left: 0; }
+    .outline summary { display: flex; align-items: flex-start; list-style: none; cursor: pointer; }
+    .outline summary::-webkit-details-marker { display: none; }
+    .outline summary::before { content: "▸"; display: inline-block; flex: none; width: 14px; padding-top: 5px; font-size: 10px; color: var(--faint); transition: transform 0.15s; }
+    .outline details[open] > summary::before { transform: rotate(90deg); }
+    .ol-item { flex: 1; min-width: 0; justify-content: flex-start; padding: 4px 6px; text-align: left; white-space: normal; line-height: 1.35; color: var(--text); }
+    .ol-leaf > .ol-item { width: calc(100% - 14px); margin-left: 14px; }
+
+    @media (max-width: 640px) {
+      .start { padding: 24px 16px 40px; }
+      .start-drop { flex-wrap: wrap; }
+    }
+
     @media (max-width: 900px) {
       .panel.left { display: none; }
       .panel.right { width: 220px; }
@@ -585,6 +656,7 @@
           <button type="button" data-panel="comments" role="tab">Chú thích <span id="comment-count" class="badge"></span></button>
           <button type="button" data-panel="search" role="tab">Tìm kiếm</button>
           <button type="button" data-panel="forms" role="tab">Biểu mẫu</button>
+          <button type="button" data-panel="outline" role="tab">Mục lục</button>
           <button type="button" data-panel="news" role="tab">Tin <span id="news-count" class="badge"></span></button>
         </div>
       </div>
@@ -592,6 +664,7 @@
       <div class="panel-body hidden" id="search-panel"></div>
       <div class="panel-body hidden" id="forms-panel"></div>
       <div class="panel-body hidden" id="news-panel"></div>
+      <div class="panel-body hidden" id="outline-panel"></div>
     </aside>
   </div>
 

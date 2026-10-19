@@ -6,7 +6,7 @@ Source: <https://github.com/storytold/pdfcraft> — Copyright (c) 2026 ArtCraft 
 
 Used as design reference only:
 
-- Light and dark color tokens (`crates/ui-egui/src/theme.rs`) → CSS variables in `index.html`.
+- Dark color tokens (`crates/ui-egui/src/theme.rs`) → CSS variables in `index.html`. The light tokens are the project's own white theme.
 - Tool-group hues (`crates/engine/src/catalog.rs`) → mode-tab colors in `index.html`.
 - Default comment styles (`crates/annot/src/lib.rs`, `Style::default_for`) → defaults in `src/marks.js`.
 - Feature grouping (menus, modes, tools, comments panel) → `index.html` and `src/app.js`.
@@ -23,3 +23,6 @@ Loaded from CDN with pinned versions; see each project's license.
   - tesseract.js 7.0.0 (Apache-2.0) and its language data: OCR.
   - JSZip 3.10.1 (MIT or GPL-3.0, used under MIT): image extraction archive.
   - docx 9.5.1 (MIT): Word export.
+  - SheetJS Community Edition 0.20.2 (Apache-2.0), from cdn.sheetjs.com: Excel export and Excel → PDF.
+  - Mammoth 1.8.0 (BSD-2-Clause): Word → PDF.
+  - DejaVu Sans 2.37 (Bitstream Vera / DejaVu fonts license, free to embed), `dejavu-fonts-ttf` on npm: Vietnamese text in exported PDFs when no font is chosen.

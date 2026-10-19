@@ -8,15 +8,15 @@ Trình chỉnh sửa PDF chạy hoàn toàn trong trình duyệt. Tệp của b�
 
 | Chế độ | Có gì |
 |---|---|
-| Đọc | Phóng to/thu nhỏ, vừa trang, tìm kiếm văn bản (Ctrl+F), in |
+| Đọc | Phóng to/thu nhỏ, vừa trang, tìm kiếm văn bản (Ctrl+F), mục lục (bookmark) bấm để nhảy trang, in |
 | Chú thích | Ghi chú, tô sáng, gạch chân/ngang/sóng, hình chữ nhật, elip, đường, mũi tên, vẽ tự do, con dấu |
 | Chỉnh sửa | Thêm chữ, chèn ảnh, liên kết, hình mờ, đầu/chân trang và số Bates, thuộc tính tài liệu |
-| Trang | Kéo thả hình thu nhỏ để sắp xếp (chọn nhiều trang bằng Ctrl/Shift), nút xoay/xóa nhanh trên từng trang, chèn trang trắng, nhân bản, trích xuất, kết hợp nhiều PDF, xuất PNG |
+| Trang | Kéo thả hình thu nhỏ để sắp xếp (chọn nhiều trang bằng Ctrl/Shift), nút xoay/xóa nhanh trên từng trang, chèn trang trắng, nhân bản, trích xuất, tách PDF (mỗi trang, mỗi N trang, theo dãy), gộp nhiều PDF và đổi thứ tự, cắt lề (cố định hoặc tự động theo nội dung), đánh số trang (số bắt đầu, bỏ trang bìa), xuất PNG |
 | Ký & điền | Chữ ký vẽ tay, dấu tích/chéo/chấm, ngày, điền biểu mẫu có sẵn |
-| Chuyển đổi | OCR tiếng Việt và tiếng Anh, xuất Word/TXT/HTML, tách ảnh (.zip), giảm dung lượng |
-| Bảo vệ | Che thông tin thật (xóa nội dung bên dưới), đặt mật khẩu AES-256, mở tệp có mật khẩu, xóa thông tin ẩn |
+| Chuyển đổi | OCR tiếng Việt và tiếng Anh, xuất Word/Excel/TXT/HTML/ảnh, tạo PDF từ Word (giữ tiêu đề, danh sách, bảng), Excel (mọi sheet, bảng rộng xoay ngang) và ảnh, tách ảnh (.zip), giảm dung lượng |
+| Bảo vệ | Che thông tin thật (xóa nội dung bên dưới), đặt mật khẩu AES-256, mở tệp có mật khẩu, gỡ mật khẩu, xóa thông tin ẩn |
 
-Thêm: hoàn tác/làm lại cho mọi thao tác, bảng lệnh Ctrl+K, chủ đề sáng/tối, kéo thả tệp vào cửa sổ.
+Thêm: màn hình khởi động với **Công cụ nhanh** (gộp, tách, nén, chuyển đổi, ký, bảo vệ chỉ một cú bấm; cũng có ở Tệp › Công cụ nhanh), hoàn tác/làm lại cho mọi thao tác, bảng lệnh Ctrl+K, chủ đề sáng/tối, kéo thả tệp vào cửa sổ.
 
 Di chuyển và căn chỉnh:
 
@@ -25,7 +25,7 @@ Di chuyển và căn chỉnh:
 - Khi kéo chú thích hay khung chữ, mục tự bắt dính vào mép và tâm trang, lề khối chữ của trang và các mục khác, kèm đường gióng màu xanh. Giữ Ctrl khi kéo để tắt.
 - Trang chỉ được vẽ khi gần vùng nhìn thấy và được giải phóng khi cuộn xa, nên tài liệu dài vẫn nhẹ RAM.
 
-Chữ tiếng Việt khi xuất PDF cần một font `.ttf` hỗ trợ tiếng Việt (Tệp › Chọn font), ví dụ `C:\Windows\Fonts\arial.ttf`.
+Chữ tiếng Việt khi xuất PDF (hộp chữ, con dấu, đầu/chân trang, hình mờ, chữ OCR, Word/Excel → PDF): nếu chưa chọn font, trình soạn tự tải font DejaVu Sans (khoảng 740 KB, một lần mỗi phiên) và chỉ nhúng các chữ cần dùng. Chỉ font được tải về, tài liệu không gửi đi đâu. Muốn dùng font khác: Tệp › Chọn font (.ttf), ví dụ `C:\Windows\Fonts\arial.ttf`.
 
 ## Tài khoản VET VIRAL
 
@@ -63,6 +63,7 @@ node --test tests/
 - `src/pdfops.js`, `src/pages.js`: thao tác trang.
 - `src/ocr.js`, `src/protect.js`, `src/extract.js`, `src/redact.js`: OCR, mã hóa, tách nội dung, che thông tin.
 - `src/geometry.js`, `src/docsettings.js`, `src/search.js`, `src/textlayout.js`: các hàm thuần, có test.
+- `src/quicktools.js`: các thẻ Công cụ nhanh. `src/crop.js` (cắt lề), `src/snap.js` (bắt dính), `src/fonts.js` (font Unicode khi cần): hàm thuần, có test. Thiết kế và luồng xử lý: [WALKTHROUGH.md](WALKTHROUGH.md).
 - `src/store.js`: kho trạng thái tập trung (sự kiện, intent, lịch sử hoàn tác). Các thành phần nghe sự kiện và gửi intent, không gọi thẳng nhau.
 - `src/components/thumbnail-sidebar.js` (`<pdf-thumbnail-sidebar>`): danh sách trang, chọn nhiều, kéo thả, xoay/xóa nhanh. Logic chọn trang trong `src/pageselect.js`.
 - `src/components/canvas-view.js` (`<pdf-canvas-view>`): vùng trang, vẽ trang lười, cuộn bằng tay, thu phóng bằng cử chỉ, đường gióng. Bắt dính dùng `src/snap.js`.

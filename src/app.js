@@ -43,6 +43,7 @@ import {
   HEADER_FOOTER_SLOTS,
   batesLabel,
   formatTokens,
+  headerFooterContext,
   sanitizeHeaderFooter,
   sanitizeMeta,
   sanitizeWatermark,
@@ -61,6 +62,11 @@ import {
   reorderPages,
   rotatePages,
 } from './pdfops.js';
+import { cropPages, mergePdfs, pageBoxes } from './pdfops.js';
+import { splitPlan } from './pages.js';
+import { contentBounds, croppedBox, marginsFromBounds, mmToPt, ptToMm, unionRects } from './crop.js';
+import { loadUnicodeFont, needsUnicodeFont } from './fonts.js';
+import { quickToolsGrid } from './quicktools.js';
 import { rasterizeRedactions } from './redact.js';
 import { compressPdf, decryptPdf, encryptPdf, isEncrypted } from './protect.js';
 import { OCR_LANGUAGES, ocrPage } from './ocr.js';
@@ -181,6 +187,15 @@ const ACTIONS = {
   compress: { label: 'Giảm dung lượng', icon: 'compress', needsDoc: true, run: compressDocument },
   protect: { label: 'Đặt mật khẩu…', icon: 'lock', needsDoc: true, run: openProtectDialog },
   sanitize: { label: 'Xóa thông tin ẩn…', icon: 'sanitize', needsDoc: true, checked: () => state.settings.sanitize, run: openSanitizeDialog },
+  quickTools: { label: 'Công cụ nhanh…', icon: 'bolt', run: openQuickTools },
+  closeDoc: { label: 'Đóng tài liệu', icon: 'cross', needsDoc: true, run: closeDocument },
+  merge: { label: 'Gộp nhiều PDF…', icon: 'merge', run: openMergeDialog },
+  split: { label: 'Tách PDF…', icon: 'split', needsDoc: true, run: openSplitDialog },
+  crop: { label: 'Cắt lề trang…', icon: 'crop', needsDoc: true, run: openCropDialog },
+  pageNumbers: { label: 'Đánh số trang…', icon: 'hash', needsDoc: true, run: openPageNumbersDialog },
+  organizePages: { label: 'Sắp xếp trang', icon: 'pages', needsDoc: true, run: () => setMode('organize') },
+  unlock: { label: 'Gỡ mật khẩu tệp PDF…', icon: 'unlock', run: unlockQuick },
+  outline: { label: 'Mục lục (bookmark)', icon: 'bookmark', needsDoc: true, run: () => showPanel('outline') },
   themeSystem: { label: 'Chủ đề theo hệ thống', icon: 'info', checked: () => state.theme === 'system', run: () => applyTheme('system') },
   themeLight: { label: 'Chủ đề sáng', icon: 'info', checked: () => state.theme === 'light', run: () => applyTheme('light') },
   themeDark: { label: 'Chủ đề tối', icon: 'info', checked: () => state.theme === 'dark', run: () => applyTheme('dark') },
@@ -192,10 +207,10 @@ const ACTIONS = {
 };
 
 const MENUS = [
-  { label: 'Tệp', items: ['open', 'newBlank', 'convertHub', '-', 'imagesToPdf', 'excelToPdf', 'docxToPdf', '-', 'export', 'exportImage', 'print', '-', 'chooseFont', 'properties'] },
+  { label: 'Tệp', items: ['open', 'newBlank', 'quickTools', 'convertHub', '-', 'merge', 'imagesToPdf', 'excelToPdf', 'docxToPdf', '-', 'export', 'exportImage', 'print', '-', 'chooseFont', 'properties', '-', 'closeDoc'] },
   { label: 'Sửa', items: ['undo', 'redo', '-', 'delete', '-', 'find', 'palette'] },
-  { label: 'Xem', items: ['zoomIn', 'zoomOut', 'zoom100', 'fitPage', 'fitWidth', '-', 'themeSystem', 'themeLight', 'themeDark'] },
-  { label: 'Trang', items: ['rotateLeft', 'rotateRight', 'movePageUp', 'movePageDown', '-', 'insertBlank', 'duplicatePage', 'deletePage', '-', 'extractPages', 'combine'] },
+  { label: 'Xem', items: ['zoomIn', 'zoomOut', 'zoom100', 'fitPage', 'fitWidth', '-', 'outline', '-', 'themeSystem', 'themeLight', 'themeDark'] },
+  { label: 'Trang', items: ['rotateLeft', 'rotateRight', 'movePageUp', 'movePageDown', '-', 'insertBlank', 'duplicatePage', 'deletePage', '-', 'crop', 'pageNumbers', '-', 'extractPages', 'split', 'combine'] },
   {
     label: 'Công cụ',
     items: [
@@ -206,8 +221,8 @@ const MENUS = [
     ],
   },
   { label: 'Chuyển đổi', items: ['convertHub', '-', 'ocr', 'toggleOcr', '-', 'exportExcel', 'exportWord', 'exportText', 'exportHtml', '-', 'exportImagesDpi', 'extractImages', 'exportImage', '-', 'compress'] },
-  { label: 'Bảo vệ', items: ['protect', 'sanitize', '-', { tool: 'redact' }] },
-  { label: 'Trợ giúp', items: ['shortcuts', 'palette', '-', 'login', 'news', 'manageAccount', 'logout'] },
+  { label: 'Bảo vệ', items: ['protect', 'unlock', 'sanitize', '-', { tool: 'redact' }] },
+  { label: 'Trợ giúp', items: ['quickTools', 'shortcuts', 'palette', '-', 'login', 'news', 'manageAccount', 'logout'] },
 ];
 
 // Mode tabs use the tool-group hues of the reference app (pdfcraft catalog).
@@ -232,7 +247,8 @@ const MODES = {
       ['select'],
       [{ action: 'rotateLeft' }, { action: 'rotateRight' }, { action: 'movePageUp' }, { action: 'movePageDown' }],
       [{ action: 'insertBlank' }, { action: 'duplicatePage' }, { action: 'deletePage' }],
-      [{ action: 'extractPages' }, { action: 'combine' }, { action: 'exportImage' }],
+      [{ action: 'crop' }, { action: 'pageNumbers' }],
+      [{ action: 'extractPages' }, { action: 'split' }, { action: 'combine' }],
     ],
     defaultTool: 'select',
   },
@@ -258,7 +274,7 @@ const MODES = {
   protect: {
     label: 'Bảo vệ',
     hue: 'var(--red)',
-    groups: [['select', 'redact'], [{ action: 'find' }], [{ action: 'protect' }, { action: 'sanitize' }]],
+    groups: [['select', 'redact'], [{ action: 'find' }], [{ action: 'protect' }, { action: 'unlock' }, { action: 'sanitize' }]],
     defaultTool: 'redact',
   },
 };
@@ -279,6 +295,8 @@ const els = {
   searchPanel: $('search-panel'),
   formsPanel: $('forms-panel'),
   newsPanel: $('news-panel'),
+  outlinePanel: $('outline-panel'),
+  start: $('start'),
   newsCount: $('news-count'),
   status: $('status'),
   pageinfo: $('pageinfo'),
@@ -318,6 +336,7 @@ const store = new EditorStore({
   search: { query: '', caseSensitive: false, hits: [], index: -1 },
   textCache: new Map(),
   formFields: [],
+  outline: null, // pdf.js outline (bookmarks) of the open document
   docInfo: null,
   busy: false,
   showOcr: false,
@@ -792,8 +811,8 @@ function renderPageOverlay(i) {
 function renderDecorations(svg, i, size) {
   const { width: W, height: H } = size;
   const hf = sanitizeHeaderFooter(state.settings.headerFooter);
-  if (hf) {
-    const ctx = { file: state.fileName, date: todayLabel(), page: i + 1, total: state.pageSizes.length, bates: batesLabel(hf.batesPrefix, hf.batesStart, hf.batesDigits, i) };
+  const ctx = hf && headerFooterContext(hf, i, state.pageSizes.length, { file: state.fileName, date: todayLabel() });
+  if (ctx) {
     for (const [row, y] of [['header', hf.margin + hf.fontSize], ['footer', H - hf.margin]]) {
       for (const [pos, x, anchor] of [['Left', hf.margin, 'start'], ['Center', W / 2, 'middle'], ['Right', W - hf.margin, 'end']]) {
         const text = formatTokens(hf[row + pos], ctx);
@@ -1411,10 +1430,12 @@ function renderPanel() {
   els.searchPanel.classList.toggle('hidden', state.panel !== 'search');
   els.formsPanel.classList.toggle('hidden', state.panel !== 'forms');
   els.newsPanel.classList.toggle('hidden', state.panel !== 'news');
+  els.outlinePanel.classList.toggle('hidden', state.panel !== 'outline');
   if (state.panel === 'comments') renderComments();
   if (state.panel === 'search') renderSearchResults();
   if (state.panel === 'forms') renderForms();
   if (state.panel === 'news') renderNews();
+  if (state.panel === 'outline') renderOutline();
 }
 
 function renderComments() {
@@ -1617,11 +1638,12 @@ function settingsContext() {
 // The full export: redaction rasters, every item and document setting. `overrides` replaces
 // settings for this build only, e.g. no watermark when extracting text.
 async function buildOutput(overrides = {}) {
+  const settings = { ...state.settings, ...overrides };
   const raster = await rasterizeRedactions(state.doc, state.marks);
   return exportPdf(state.pdfBytes.slice(), state.boxes, {
-    fontBytes: state.fontBytes,
+    fontBytes: await fontFor(exportTexts(state.boxes, state.marks, settings)),
     marks: state.marks,
-    settings: { ...state.settings, ...overrides },
+    settings,
     rasterPages: raster,
     context: settingsContext(),
   });
@@ -1634,7 +1656,7 @@ async function bakePage(indices) {
   const marks = state.marks.filter((m) => pages.has(m.page));
   if (!boxes.length && !marks.length) return state.pdfBytes;
   const raster = await rasterizeRedactions(state.doc, marks);
-  return exportPdf(state.pdfBytes.slice(), boxes, { fontBytes: state.fontBytes, marks, rasterPages: raster });
+  return exportPdf(state.pdfBytes.slice(), boxes, { fontBytes: await fontFor(exportTexts(boxes, marks)), marks, rasterPages: raster });
 }
 
 // Replaces the document bytes as one undo step. `remap` re-indexes everything tied to a page
@@ -1979,14 +2001,16 @@ function toggleOcrBoxes() {
 
 // Text, Word and HTML are built from the exported PDF, so redacted text never leaks into them and
 // OCR text is included. Watermark and header/footer are left out of the content.
-function exportContent(format) {
+function exportContent(format, pageRange = '') {
   return withBusy('Đang trích xuất nội dung…', async () => {
     const doc = await pdfjsLib.getDocument({ data: await buildOutput({ watermark: null, headerFooter: null }) }).promise;
     const pages = [];
+    let numbers;
     try {
-      for (let i = 1; i <= doc.numPages; i++) {
-        setStatus(`Đang đọc chữ trang ${i}/${doc.numPages}…`);
-        pages.push(groupLines(await textItemsOf(await doc.getPage(i))));
+      numbers = parseUserPageRange(pageRange, doc.numPages);
+      for (const [k, n] of numbers.entries()) {
+        setStatus(`Đang đọc chữ trang ${n} (${k + 1}/${numbers.length})…`);
+        pages.push(groupLines(await textItemsOf(await doc.getPage(n))));
       }
     } finally {
       doc.destroy();
@@ -1996,8 +2020,8 @@ function exportContent(format) {
     }
     const base = baseName(state.fileName);
     const title = state.settings.meta?.title || state.docInfo?.Title || base;
-    if (format === 'txt') download(new Blob(['﻿', pagesToText(pages)], { type: 'text/plain;charset=utf-8' }), `${base}.txt`);
-    else if (format === 'html') download(new Blob([pagesToHtml(title, pages)], { type: 'text/html;charset=utf-8' }), `${base}.html`);
+    if (format === 'txt') download(new Blob(['﻿', pagesToText(pages, numbers)], { type: 'text/plain;charset=utf-8' }), `${base}.txt`);
+    else if (format === 'html') download(new Blob([pagesToHtml(title, pages, numbers)], { type: 'text/html;charset=utf-8' }), `${base}.html`);
     else download(await buildDocx(title, pages), `${base}.docx`);
     const lines = pages.reduce((n, l) => n + l.length, 0);
     setStatus(`Đã xuất ${base}.${format} (${pages.length} trang, ${lines} dòng). Chỉ giữ chữ, không giữ bố cục và hình.`);
@@ -2129,18 +2153,22 @@ async function exportImagesWithSettings({ format = 'png', dpi = 150, quality = 0
 async function convertExcelFileToPdf(file) {
   return withBusy('Đang chuyển đổi Excel sang PDF…', async () => {
     const buf = await file.arrayBuffer();
-    const pdfBytes = await excelToPdf(buf, { title: file.name.replace(/\.[^.]+$/, '') });
+    fontError = null;
+    const pdfBytes = await excelToPdf(buf, { title: file.name.replace(/\.[^.]+$/, ''), loadFont: fontFor });
     await openBytes(pdfBytes, file.name.replace(/\.[^.]+$/, '.pdf'));
-    setStatus(`Đã tạo PDF thành công từ bảng tính ${file.name}.`);
+    if (fontError) setStatus(`Đã tạo PDF từ bảng tính ${file.name}, nhưng chữ đã bỏ dấu: ${fontError}`, true);
+    else setStatus(`Đã tạo PDF thành công từ bảng tính ${file.name}.`);
   });
 }
 
 async function convertDocxFileToPdf(file) {
   return withBusy('Đang chuyển đổi Word sang PDF…', async () => {
     const buf = await file.arrayBuffer();
-    const pdfBytes = await docxToPdf(buf, { title: file.name.replace(/\.[^.]+$/, '') });
+    fontError = null;
+    const pdfBytes = await docxToPdf(buf, { title: file.name.replace(/\.[^.]+$/, ''), loadFont: fontFor });
     await openBytes(pdfBytes, file.name.replace(/\.[^.]+$/, '.pdf'));
-    setStatus(`Đã tạo PDF thành công từ tài liệu Word ${file.name}.`);
+    if (fontError) setStatus(`Đã tạo PDF từ tài liệu Word ${file.name}, nhưng chữ đã bỏ dấu: ${fontError}`, true);
+    else setStatus(`Đã tạo PDF thành công từ tài liệu Word ${file.name}.`);
   });
 }
 
@@ -2260,6 +2288,7 @@ function openConversionHub() {
   dropzoneEl.ondragleave = () => dropzoneEl.classList.remove('dragover');
   dropzoneEl.ondrop = (e) => {
     e.preventDefault();
+    e.stopPropagation(); // not the window drop that opens a PDF
     dropzoneEl.classList.remove('dragover');
     if (e.dataTransfer.files?.length) {
       handleFilesSelected(Array.from(e.dataTransfer.files));
@@ -2306,7 +2335,8 @@ function openConversionHub() {
     ),
   );
 
-  const mainContainer = el('div', {}, tabsBar, exportView, importView);
+  const hubError = el('p', { class: 'dlg-error' });
+  const mainContainer = el('div', {}, tabsBar, exportView, importView, hubError);
 
   tabExport.onclick = () => {
     activeTab = 'export';
@@ -2335,13 +2365,13 @@ function openConversionHub() {
         run: async () => {
           if (activeTab === 'export') {
             if (!state.doc) {
-              alert('Hãy mở một tệp PDF trước khi xuất.');
+              hubError.textContent = 'Hãy mở một tệp PDF trước khi xuất.';
               return false;
             }
             if (selectedExportFormat === 'xlsx') {
               await exportExcelCurrent({ separateSheets: sheetSepCheckbox.checked, pageRange: pageRangeInput.value });
             } else if (selectedExportFormat === 'docx') {
-              await exportContent('docx');
+              await exportContent('docx', pageRangeInput.value);
             } else if (selectedExportFormat === 'images') {
               await exportImagesWithSettings({
                 format: imgFormatSelect.value,
@@ -2353,7 +2383,7 @@ function openConversionHub() {
             }
           } else {
             if (!selectedFiles.length) {
-              alert('Hãy chọn hoặc kéo thả ít nhất 1 tệp tin.');
+              hubError.textContent = 'Hãy chọn hoặc kéo thả ít nhất 1 tệp tin.';
               return false;
             }
             if (!(await confirmReplace())) return false;
@@ -2680,6 +2710,600 @@ async function logoutAccount() {
   if (state.panel === 'news') renderNews();
 }
 
+// ---------- quick tools, start screen ----------
+
+// Runs a quick-tool card (quicktools.js). A job that needs a document asks for a PDF first.
+function runQuickTool(card) {
+  const needsDoc = card.tool ? true : !!ACTIONS[card.action]?.needsDoc;
+  const go = () => (card.tool ? setTool(card.tool) : runAction(card.action));
+  return needsDoc && !state.pdfBytes ? pickPdfThen(go) : go();
+}
+
+function openQuickTools() {
+  let close = () => {};
+  close = openDialog({
+    title: 'Công cụ nhanh',
+    width: 900,
+    body: quickToolsGrid((card) => {
+      close();
+      runQuickTool(card);
+    }),
+    actions: [{ label: 'Đóng' }],
+  });
+}
+
+// The start screen (quick tools and a drop area) replaces the page view while no document is open.
+function showStart(on) {
+  els.start.classList.toggle('hidden', !on);
+  els.view.classList.toggle('hidden', on);
+  if (!on || els.start.childElementCount) return;
+  els.start.append(
+    el('div', { class: 'start-hero' },
+      el('h1', {}, 'PDF Editor', el('span', { class: 'pro' }, 'PRO')),
+      el('p', { class: 'start-sub' }, 'Chỉnh sửa, chuyển đổi và bảo vệ PDF ngay trong trình duyệt. Tệp của bạn không rời khỏi máy.'),
+      el('div', { class: 'start-drop' },
+        icon('upload', 22),
+        el('span', { class: 'grow' }, 'Kéo thả tệp PDF vào đây để mở'),
+        el('button', { class: 'primary', onclick: () => runAction('open') }, icon('open', 16), 'Mở PDF'),
+        el('button', { onclick: () => runAction('newBlank') }, icon('file', 16), 'Tài liệu trống'),
+      ),
+    ),
+    quickToolsGrid(runQuickTool),
+  );
+}
+
+// Asks for a PDF, opens it, then runs `next` with what openPdfFile reports ({ encrypted }).
+function pickPdfThen(next) {
+  const input = el('input', { type: 'file', accept: 'application/pdf,.pdf', hidden: true });
+  input.addEventListener('cancel', () => input.remove());
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    input.remove();
+    const opened = file ? await openPdfFile(file) : null;
+    if (opened) await next(opened);
+  });
+  document.body.append(input);
+  input.click();
+}
+
+// Quick tool: open a protected PDF and save it without its password and restrictions.
+function unlockQuick() {
+  pickPdfThen(async ({ encrypted }) => {
+    if (!encrypted) return setStatus('Tệp này không có mật khẩu hay hạn chế quyền, không cần gỡ.');
+    state.settings = { ...state.settings, protection: null };
+    await exportCurrent();
+  });
+}
+
+async function closeDocument() {
+  if (!(await confirmReplace())) return;
+  state.doc?.destroy();
+  Object.assign(state, {
+    pdfBytes: null,
+    doc: null,
+    fileName: 'document.pdf',
+    pageSizes: [],
+    pageEls: [],
+    boxes: [],
+    marks: [],
+    settings: EMPTY_SETTINGS,
+    selected: null,
+    current: 0,
+    formFields: [],
+    docInfo: null,
+    outline: null,
+    textCache: new Map(),
+    search: { query: '', caseSensitive: false, hits: [], index: -1 },
+  });
+  store.clearHistory();
+  els.view.replaceChildren();
+  store.emit(EVENTS.pagesUpdated, { doc: null, pageSizes: [], current: 0, order: null, changed: [] });
+  setCurrentPage(0);
+  renderToolbar();
+  renderProps();
+  renderPanel();
+  updateQuick();
+  showStart(true);
+  setStatus('Đã đóng tài liệu.');
+}
+
+// ---------- fonts for export ----------
+
+let fontError = null; // why the Unicode font could not be loaded, for the next status message
+
+// Font for text that Helvetica cannot write (most Vietnamese): the font chosen in Tệp › Chọn font,
+// else DejaVu Sans fetched on first need. Null when Helvetica is enough or the download failed.
+async function fontFor(texts) {
+  if (state.fontBytes) return state.fontBytes;
+  if (!needsUnicodeFont(texts)) return null;
+  const status = els.status.textContent;
+  setStatus('Đang tải font tiếng Việt (DejaVu Sans, khoảng 740 KB, chỉ lần đầu)…');
+  try {
+    const bytes = await loadUnicodeFont();
+    setStatus(status);
+    return bytes;
+  } catch (err) {
+    fontError = err.message;
+    return null;
+  }
+}
+
+// Every text the exporter draws with a font: text boxes, stamps, watermark, header/footer, OCR
+// words and filled form fields.
+function exportTexts(boxes, marks, settings = {}) {
+  const hf = sanitizeHeaderFooter(settings.headerFooter);
+  const ctx = { file: state.fileName, date: todayLabel(), page: 1, total: 1, bates: hf ? batesLabel(hf.batesPrefix, 0, 1, 0) : '' };
+  const formTouched = Object.keys(settings.formValues ?? {}).length > 0 || settings.flattenForm;
+  return [
+    ...boxes.map((b) => b.text),
+    ...marks.filter((m) => m.type === 'stamp').map((m) => m.label),
+    settings.watermark?.text,
+    ...(hf ? HEADER_FOOTER_SLOTS.map((s) => formatTokens(hf[s], ctx)) : []),
+    ...(settings.ocrWords ?? []).map((w) => w.text),
+    ...(formTouched ? [...state.formFields.map((f) => f.value), ...Object.values(settings.formValues)].filter((v) => typeof v === 'string') : []),
+  ];
+}
+
+// ---------- split, merge, crop, page numbers ----------
+
+function openSplitDialog() {
+  const total = state.pageSizes.length;
+  const half = Math.ceil(total / 2);
+  const mode = el('select', {},
+    el('option', { value: 'ranges' }, 'Theo các phần tự chọn'),
+    el('option', { value: 'every' }, 'Mỗi N trang một tệp'),
+    el('option', { value: 'each' }, 'Mỗi trang một tệp'),
+  );
+  const ranges = el('input', { type: 'text', value: total > 1 ? `1-${half}; ${half + 1}-${total}` : '1', placeholder: '1-3; 4-6; 7-' });
+  const every = el('input', { type: 'number', min: 1, max: total, value: Math.max(1, half) });
+  const rangesRow = field('Các phần (cách nhau bằng dấu ;)', ranges, 'Mỗi phần là một tệp. Trong một phần dùng dấu phẩy: 1-2, 5.');
+  const everyRow = field('Số trang mỗi tệp', every);
+  const preview = el('p', { class: 'split-preview' });
+  const error = el('p', { class: 'dlg-error' });
+  const plan = () => splitPlan(mode.value, total, mode.value === 'every' ? every.value : ranges.value);
+  const update = () => {
+    rangesRow.classList.toggle('hidden', mode.value !== 'ranges');
+    everyRow.classList.toggle('hidden', mode.value !== 'every');
+    try {
+      const parts = plan();
+      const list = parts.slice(0, 6).map((p) => formatPageRange(p)).join(' · ');
+      preview.textContent = `Sẽ tạo ${parts.length} tệp: ${list}${parts.length > 6 ? ' · …' : ''}${parts.length > 1 ? ' (đóng gói .zip)' : ''}`;
+      error.textContent = '';
+    } catch (err) {
+      preview.textContent = '';
+      error.textContent = err.message;
+    }
+  };
+  for (const input of [mode, ranges, every]) input.addEventListener('input', update);
+  update();
+  openDialog({
+    title: 'Tách PDF',
+    body: el('div', {},
+      el('p', { class: 'dlg-hint' }, `Tài liệu có ${total} trang. Mỗi tệp mới giữ mọi chỉnh sửa và mật khẩu đã đặt.`),
+      field('Cách tách', mode), rangesRow, everyRow, preview, error,
+    ),
+    actions: [
+      { label: 'Hủy' },
+      {
+        label: 'Tách',
+        primary: true,
+        run: () => {
+          let parts;
+          try {
+            parts = plan();
+          } catch (err) {
+            error.textContent = err.message;
+            return false;
+          }
+          splitDocument(parts);
+        },
+      },
+    ],
+  });
+}
+
+function splitDocument(parts) {
+  return withBusy('Đang tách PDF…', async () => {
+    const full = await buildOutput();
+    const base = baseName(state.fileName);
+    const files = [];
+    for (const [k, part] of parts.entries()) {
+      setStatus(`Đang tạo phần ${k + 1}/${parts.length}…`);
+      files.push({ name: `${base}-phan-${k + 1}-trang-${formatPageRange(part)}.pdf`, data: await protectOutput(await extractPages(full, part)) });
+    }
+    if (files.length === 1) {
+      download(files[0].data, files[0].name);
+      return setStatus(`Đã tách thành ${files[0].name}.`);
+    }
+    setStatus(`Đang nén ${files.length} tệp…`);
+    download(await zipFiles(files), `${base}-tach-${files.length}-phan.zip`, 'application/zip');
+    setStatus(`Đã tách thành ${files.length} tệp trong ${base}-tach-${files.length}-phan.zip.`);
+  });
+}
+
+function openMergeDialog() {
+  const files = []; // { name, size, bytes, pages }
+  const list = el('div', { class: 'merge-list' });
+  const summary = el('p', { class: 'dlg-hint' });
+  const error = el('p', { class: 'dlg-error' });
+  const withCurrent = state.pdfBytes ? el('input', { type: 'checkbox', checked: true }) : null;
+  const picker = el('input', { type: 'file', accept: 'application/pdf,.pdf', multiple: true, hidden: true });
+  const drop = el('div', { class: 'dropzone', role: 'button', tabindex: 0 },
+    el('strong', {}, 'Kéo thả các tệp PDF vào đây'),
+    el('p', { class: 'dlg-hint' }, 'hoặc bấm để chọn nhiều tệp cùng lúc'),
+  );
+  const move = (k, d) => {
+    const [f] = files.splice(k, 1);
+    files.splice(k + d, 0, f);
+    render();
+  };
+  const render = () => {
+    list.replaceChildren(...files.map((f, k) => el('div', { class: 'merge-row' },
+      el('span', { class: 'merge-num' }, `${k + 1}`),
+      icon('file', 16),
+      el('span', { class: 'merge-name', title: f.name }, f.name),
+      el('span', { class: 'faint' }, `${f.pages} trang · ${sizeLabel(f.size)}`),
+      iconButton('up', 'Đưa lên', () => move(k, -1), { disabled: k === 0 }),
+      iconButton('down', 'Đưa xuống', () => move(k, 1), { disabled: k === files.length - 1 }),
+      iconButton('trash', 'Bỏ khỏi danh sách', () => {
+        files.splice(k, 1);
+        render();
+      }),
+    )));
+    const current = withCurrent?.checked ? state.pageSizes.length : 0;
+    const pages = files.reduce((n, f) => n + f.pages, current);
+    summary.textContent = files.length || current ? `${files.length} tệp${current ? ' + tài liệu đang mở' : ''} · tổng ${pages} trang` : 'Chưa chọn tệp nào.';
+  };
+  const add = async (picked) => {
+    error.textContent = '';
+    for (const file of picked) {
+      if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
+        error.textContent = `Bỏ qua ${file.name}: không phải tệp PDF.`;
+        continue;
+      }
+      try {
+        let bytes = await readFile(file);
+        if (await isEncrypted(bytes)) {
+          if ((await checkPassword(bytes, '')) !== 'ok') throw new Error('tệp có mật khẩu, hãy dùng Gỡ mật khẩu trước');
+          bytes = await decryptPdf(bytes, '');
+        }
+        files.push({ name: file.name, size: file.size, bytes, pages: (await PDFLib.PDFDocument.load(bytes)).getPageCount() });
+      } catch (err) {
+        error.textContent = `Không thêm được ${file.name}: ${err.message}`;
+      }
+    }
+    render();
+  };
+  drop.addEventListener('click', () => picker.click());
+  drop.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    picker.click();
+  });
+  drop.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    drop.classList.add('dragover');
+  });
+  drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+  drop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation(); // not the window drop that opens a PDF
+    drop.classList.remove('dragover');
+    add([...(e.dataTransfer?.files ?? [])]);
+  });
+  picker.addEventListener('change', () => {
+    add([...picker.files]);
+    picker.value = '';
+  });
+  withCurrent?.addEventListener('change', render);
+  render();
+
+  const merge = (open) => {
+    if (files.length + (withCurrent?.checked ? 1 : 0) < 2) {
+      error.textContent = 'Cần ít nhất hai tệp để gộp.';
+      return false;
+    }
+    mergeFiles(files.map((f) => f.bytes), { open, withCurrent: !!withCurrent?.checked, name: files[0]?.name });
+  };
+  openDialog({
+    title: 'Gộp nhiều PDF',
+    width: 560,
+    body: el('div', {},
+      drop, picker, list, summary,
+      withCurrent ? el('label', { class: 'lbl small' }, withCurrent, 'Đặt tài liệu đang mở (kèm chỉnh sửa) lên đầu') : null,
+      error,
+    ),
+    actions: [
+      { label: 'Hủy' },
+      { label: 'Gộp và tải về', run: () => merge(false) },
+      { label: 'Gộp và mở', primary: true, run: () => merge(true) },
+    ],
+  });
+}
+
+async function mergeFiles(list, { open, withCurrent, name }) {
+  if (open && !withCurrent && !(await confirmReplace())) return;
+  await withBusy('Đang gộp tệp…', async () => {
+    const all = withCurrent ? [await buildOutput(), ...list] : list;
+    const fileName = `${baseName(withCurrent ? state.fileName : name ?? 'tai-lieu.pdf')}-gop.pdf`;
+    const bytes = await mergePdfs(all);
+    if (open) {
+      await openBytes(bytes, fileName);
+      return setStatus(`Đã gộp ${all.length} tệp thành ${fileName} (${state.pageSizes.length} trang). Nhấn Ctrl+S để lưu.`);
+    }
+    download(withCurrent ? await protectOutput(bytes) : bytes, fileName);
+    setStatus(`Đã gộp ${all.length} tệp và tải về ${fileName}.`);
+  });
+}
+
+// Bounding box of a text box as displayed (its DOM size), in view points.
+function textBoxBounds(b) {
+  const node = document.querySelector(`.tbox[data-id="${b.id}"]`);
+  return node ? { x: b.x, y: b.y, w: node.offsetWidth / state.zoom, h: node.offsetHeight / state.zoom } : { x: b.x, y: b.y, w: 1, h: b.fontSize * 1.2 };
+}
+
+// Margins that keep what is drawn on page `i` (the PDF and the editor's items) plus `pad` points.
+async function autoMargins(i, pad) {
+  const scale = 0.75;
+  const page = await state.doc.getPage(i + 1);
+  const view = page.getViewport({ scale });
+  const canvas = el('canvas', { width: Math.ceil(view.width), height: Math.ceil(view.height) });
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport: view }).promise;
+  const px = contentBounds(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
+  canvas.width = canvas.height = 0;
+  const drawn = px && { x: px.x / scale, y: px.y / scale, w: px.w / scale, h: px.h / scale };
+  const items = [...marksOnPage(state.marks, i).map(markBounds), ...state.boxes.filter((b) => b.page === i).map(textBoxBounds)];
+  return marginsFromBounds(unionRects([drawn, ...items]), state.pageSizes[i], pad);
+}
+
+function openCropDialog() {
+  const total = state.pageSizes.length;
+  const scope = el('select', {},
+    el('option', { value: 'current' }, `Trang hiện tại (${state.current + 1})`),
+    el('option', { value: 'all' }, `Tất cả ${total} trang`),
+    el('option', { value: 'range' }, 'Dãy trang…'),
+  );
+  const range = el('input', { type: 'text', placeholder: 'Ví dụ 1-3, 5', disabled: true });
+  const manual = el('input', { type: 'radio', name: 'crop-mode', checked: true });
+  const auto = el('input', { type: 'radio', name: 'crop-mode' });
+  const mm = (v) => el('input', { type: 'number', min: 0, step: 1, value: v });
+  const sides = { top: mm(10), right: mm(10), bottom: mm(10), left: mm(10) };
+  const pad = mm(3);
+  const measure = el('button', { type: 'button', class: 'dlg-btn' }, icon('scan', 16), 'Đo lề trắng trang hiện tại');
+  const manualBox = el('div', {},
+    el('div', { class: 'crop-sides' }, field('Trên (mm)', sides.top), field('Phải (mm)', sides.right), field('Dưới (mm)', sides.bottom), field('Trái (mm)', sides.left)),
+    measure,
+  );
+  const autoBox = el('div', { class: 'hidden' }, field('Chừa thêm quanh nội dung (mm)', pad, 'Mỗi trang được đo riêng; trang trắng giữ nguyên.'));
+  const error = el('p', { class: 'dlg-error' });
+  const toPt = (input) => mmToPt(Math.max(0, Number(input.value) || 0));
+  const manualMargins = () => Object.fromEntries(Object.entries(sides).map(([k, input]) => [k, toPt(input)]));
+
+  // Preview on the current page: the part that will be cut is shaded.
+  const drawPreview = (m) => {
+    const svg = pageSvg(state.current);
+    svg?.querySelectorAll('.crop-shade').forEach((n) => n.remove());
+    if (!svg || !m) return;
+    const { width: W, height: H } = state.pageSizes[state.current];
+    const d = `M0 0H${W}V${H}H0Z M${m.left} ${m.top}V${H - m.bottom}H${W - m.right}V${m.top}Z`;
+    svg.append(svgEl('path', { class: 'crop-shade', d, 'fill-rule': 'evenodd' }));
+  };
+  let previewToken = 0;
+  const update = async () => {
+    const token = ++previewToken;
+    range.disabled = scope.value !== 'range';
+    manualBox.classList.toggle('hidden', auto.checked);
+    autoBox.classList.toggle('hidden', !auto.checked);
+    const m = auto.checked ? await autoMargins(state.current, toPt(pad)) : manualMargins();
+    if (token === previewToken) drawPreview(m);
+  };
+  measure.addEventListener('click', async () => {
+    const m = await autoMargins(state.current, 0);
+    for (const k of Object.keys(sides)) sides[k].value = Math.floor(ptToMm(m[k]));
+    update();
+  });
+  for (const input of [scope, manual, auto, pad, ...Object.values(sides)]) input.addEventListener('input', update);
+  scope.addEventListener('change', () => {
+    if (!range.disabled) range.focus();
+  });
+  update();
+
+  openDialog({
+    title: 'Cắt lề trang',
+    width: 480,
+    body: el('div', {},
+      field('Áp dụng cho', scope), range,
+      el('div', { class: 'radio-row' },
+        el('label', { class: 'lbl' }, manual, 'Lề cố định'),
+        el('label', { class: 'lbl' }, auto, 'Tự động theo nội dung'),
+      ),
+      manualBox, autoBox,
+      el('p', { class: 'dlg-hint' }, 'Vùng tô xám trên trang là phần bị cắt. Các mục đã thêm giữ nguyên vị trí so với nội dung.'),
+      error,
+    ),
+    onClose: () => {
+      previewToken++;
+      drawPreview(null);
+    },
+    actions: [
+      { label: 'Hủy' },
+      {
+        label: 'Cắt lề',
+        primary: true,
+        run: async () => {
+          let pages;
+          try {
+            pages = scope.value === 'current' ? [state.current] : scope.value === 'all' ? state.pageSizes.map((_, i) => i) : parsePageRange(range.value, total);
+          } catch (err) {
+            error.textContent = err.message;
+            return false;
+          }
+          const boxes = await pageBoxes(state.pdfBytes);
+          const fixed = auto.checked ? null : manualMargins();
+          if (fixed) {
+            try {
+              for (const i of pages) croppedBox(boxes[i].rotation, boxes[i].box, fixed);
+            } catch (err) {
+              error.textContent = err.message;
+              return false;
+            }
+          }
+          cropDocument(pages, boxes, fixed, toPt(pad));
+        },
+      },
+    ],
+  });
+}
+
+// Crops `pages` with fixed margins, or with margins measured per page when `fixed` is null.
+// Every item on a cropped page moves with the content, so it stays where it was on the paper.
+function cropDocument(pages, boxes, fixed, pad) {
+  return withBusy('Đang cắt lề…', async () => {
+    const crops = new Map();
+    const shifts = new Map();
+    let tooSmall = 0;
+    for (const [k, i] of pages.entries()) {
+      if (!fixed) setStatus(`Đang đo lề trang ${i + 1} (${k + 1}/${pages.length})…`);
+      const m = fixed ?? (await autoMargins(i, pad));
+      if (!m.top && !m.right && !m.bottom && !m.left) continue;
+      try {
+        crops.set(i, croppedBox(boxes[i].rotation, boxes[i].box, m));
+        shifts.set(i, m);
+      } catch {
+        tooSmall++;
+      }
+    }
+    if (!crops.size) return setStatus(tooSmall ? 'Nội dung quá nhỏ để cắt lề tự động.' : 'Không có lề nào cần cắt.');
+    const before = snap();
+    const bytes = await cropPages(state.pdfBytes, crops);
+    const shift = (it) => {
+      const m = shifts.get(it.page);
+      if (!m) return it;
+      return Array.isArray(it.points) ? moveMark(it, -m.left, -m.top) : { ...it, x: it.x - m.left, y: it.y - m.top };
+    };
+    await applyBytes(bytes, before, { remap: (items) => items.map(shift), changed: [...crops.keys()] });
+    setStatus(`Đã cắt lề ${crops.size} trang${tooSmall ? `, bỏ qua ${tooSmall} trang quá ít nội dung` : ''}. Ctrl+Z để hoàn tác.`);
+  });
+}
+
+const PAGE_NUMBER_FORMATS = ['Trang {page} / {total}', 'Trang {page}', '{page} / {total}', '{page}', '- {page} -'];
+const SLOT_LABELS = {
+  headerLeft: 'Đầu trang, bên trái',
+  headerCenter: 'Đầu trang, ở giữa',
+  headerRight: 'Đầu trang, bên phải',
+  footerLeft: 'Chân trang, bên trái',
+  footerCenter: 'Chân trang, ở giữa',
+  footerRight: 'Chân trang, bên phải',
+};
+const hasPageToken = (s) => /\{page\}/.test(s ?? '');
+
+// Page numbers are a header/footer slot holding {page}; size and margin are shared with Đầu/chân trang.
+function openPageNumbersDialog() {
+  const hf = state.settings.headerFooter ?? {};
+  const used = HEADER_FOOTER_SLOTS.find((s) => hasPageToken(hf[s]));
+  const slot = el('select', {}, HEADER_FOOTER_SLOTS.map((s) => el('option', { value: s, selected: s === (used ?? 'footerCenter') }, SLOT_LABELS[s])));
+  const formats = used && !PAGE_NUMBER_FORMATS.includes(hf[used]) ? [hf[used], ...PAGE_NUMBER_FORMATS] : PAGE_NUMBER_FORMATS;
+  const sample = (f) => f.replace('{page}', '1').replace('{total}', `${state.pageSizes.length}`);
+  const format = el('select', {}, formats.map((f) => el('option', { value: f, selected: f === (used ? hf[used] : PAGE_NUMBER_FORMATS[0]) }, sample(f))));
+  const start = el('input', { type: 'number', min: 0, value: hf.pageStart ?? 1 });
+  const skip = el('input', { type: 'checkbox', checked: !!hf.skipFirst });
+  const size = el('input', { type: 'number', min: 6, max: 36, value: hf.fontSize ?? 10 });
+  const margin = el('input', { type: 'number', min: 6, max: 144, value: hf.margin ?? 24 });
+  const actions = [
+    { label: 'Hủy' },
+    {
+      label: 'Áp dụng',
+      primary: true,
+      run: () => {
+        const next = { color: '#000000', ...hf, fontSize: size.value, margin: margin.value, pageStart: start.value, skipFirst: skip.checked };
+        for (const s of HEADER_FOOTER_SLOTS) if (hasPageToken(next[s])) next[s] = '';
+        next[slot.value] = format.value;
+        updateSettings({ headerFooter: sanitizeHeaderFooter(next) });
+        setStatus('Đã đánh số trang. Số trang được ghi vào tệp khi xuất.');
+      },
+    },
+  ];
+  if (used) {
+    actions.unshift({
+      label: 'Gỡ số trang',
+      danger: true,
+      run: () => {
+        const next = { ...hf };
+        for (const s of HEADER_FOOTER_SLOTS) if (hasPageToken(next[s])) next[s] = '';
+        updateSettings({ headerFooter: sanitizeHeaderFooter(next) });
+      },
+    });
+  }
+  openDialog({
+    title: 'Đánh số trang',
+    body: el('div', {},
+      field('Vị trí', slot), field('Mẫu', format),
+      el('div', { class: 'dlg-grid' }, field('Bắt đầu từ số', start), field('Cỡ chữ', size), field('Lề (pt)', margin)),
+      el('label', { class: 'lbl small' }, skip, 'Không đánh số trang đầu (trang bìa); trang thứ hai mang số bắt đầu'),
+      el('p', { class: 'dlg-hint' }, 'Cỡ chữ và lề dùng chung với Đầu/chân trang & số Bates.'),
+    ),
+    actions,
+  });
+}
+
+// ---------- outline (bookmarks) ----------
+
+async function loadOutline(doc) {
+  try {
+    state.outline = await doc.getOutline();
+  } catch {
+    state.outline = null;
+  }
+  if (state.panel === 'outline') renderOutline();
+}
+
+function renderOutline() {
+  const panel = els.outlinePanel;
+  panel.replaceChildren();
+  if (!state.doc) return panel.append(el('p', { class: 'lbl empty-note' }, 'Mở một tệp PDF để xem mục lục.'));
+  if (!state.outline?.length) return panel.append(el('p', { class: 'lbl empty-note' }, 'Tài liệu này không có mục lục (bookmark).'));
+  panel.append(outlineList(state.outline, 0));
+}
+
+function outlineList(items, depth) {
+  return el('ul', { class: 'outline' }, items.map((it) => {
+    const link = el('button', { class: 'ol-item', title: it.title, onclick: (e) => {
+      e.preventDefault(); // inside <summary>: go to the entry without folding it
+      goToOutline(it);
+    } }, it.title || '(không tên)');
+    if (!it.items?.length) return el('li', { class: 'ol-leaf' }, link);
+    return el('li', {}, el('details', { open: depth < 1 }, el('summary', {}, link), outlineList(it.items, depth + 1)));
+  }));
+}
+
+// Scrolls to an outline entry: its page and, for XYZ/FitH destinations, the height it points to.
+async function goToOutline(item) {
+  try {
+    if (item.url) {
+      const url = safeUrl(item.url);
+      return url ? openExternal(url) : setStatus('Liên kết trong mục lục không an toàn, đã bỏ qua.', true);
+    }
+    const dest = typeof item.dest === 'string' ? await state.doc.getDestination(item.dest) : item.dest;
+    if (!Array.isArray(dest) || !dest.length) return setStatus('Mục này không trỏ tới trang nào.');
+    const index = typeof dest[0] === 'object' ? await state.doc.getPageIndex(dest[0]) : Number(dest[0]);
+    const div = state.pageEls[index];
+    if (!div) return setStatus('Mục này trỏ tới trang không còn trong tài liệu.');
+    const kind = dest[1]?.name;
+    const top = kind === 'XYZ' ? dest[3] : kind === 'FitH' || kind === 'FitBH' ? dest[2] : null;
+    let y = 0;
+    if (typeof top === 'number') {
+      const page = await state.doc.getPage(index + 1);
+      y = Math.max(0, page.getViewport({ scale: 1 }).convertToViewportPoint(kind === 'XYZ' ? dest[2] ?? 0 : 0, top)[1]);
+    }
+    scrollViewTo(div.offsetTop + y * state.zoom - 12, index);
+  } catch {
+    setStatus('Không mở được mục này.', true);
+  }
+}
+
 // ---------- dialogs ----------
 
 function openLinkDialog(id) {
@@ -2767,6 +3391,8 @@ function openHeaderFooterDialog() {
   const prefix = el('input', { type: 'text', value: hf.batesPrefix ?? '', placeholder: 'VD: HSO-' });
   const start = el('input', { type: 'number', min: 0, value: hf.batesStart ?? 1 });
   const digits = el('input', { type: 'number', min: 1, max: 12, value: hf.batesDigits ?? 6 });
+  const pageStart = el('input', { type: 'number', min: 0, value: hf.pageStart ?? 1 });
+  const skipFirst = el('input', { type: 'checkbox', checked: !!hf.skipFirst });
   const actions = [
     { label: 'Hủy' },
     {
@@ -2781,6 +3407,8 @@ function openHeaderFooterDialog() {
           batesPrefix: prefix.value,
           batesStart: start.value,
           batesDigits: digits.value,
+          pageStart: pageStart.value,
+          skipFirst: skipFirst.checked,
         });
         if (!next) {
           setStatus('Hãy nhập nội dung cho ít nhất một vị trí.', true);
@@ -2802,7 +3430,8 @@ function openHeaderFooterDialog() {
         el('span', { class: 'lbl' }, 'Chân trang'), inputs.footerLeft, inputs.footerCenter, inputs.footerRight,
       ),
       el('p', { class: 'dlg-hint' }, 'Mã thay thế: {page} số trang, {total} tổng số trang, {date} ngày, {file} tên tệp, {bates} số Bates.'),
-      el('div', { class: 'dlg-grid' }, field('Cỡ chữ', size), field('Màu', color), field('Lề (pt)', margin), field('Tiền tố Bates', prefix), field('Bates bắt đầu', start), field('Số chữ số', digits)),
+      el('div', { class: 'dlg-grid' }, field('Cỡ chữ', size), field('Màu', color), field('Lề (pt)', margin), field('Tiền tố Bates', prefix), field('Bates bắt đầu', start), field('Số chữ số', digits), field('{page} bắt đầu từ', pageStart)),
+      el('label', { class: 'lbl small' }, skipFirst, 'Không hiện trên trang đầu (trang bìa)'),
     ),
     actions,
   });
@@ -3005,6 +3634,7 @@ async function loadDocument(bytes, { fresh = false, order = null, changed = [] }
   state.textCache = new Map();
   state.search = { ...state.search, hits: [], index: -1 };
   state.formFields = await readFormFields(bytes);
+  loadOutline(doc);
   if (fresh) {
     state.current = 0;
     state.zoom = clamp(fitZoom('width'), 0.25, 4);
@@ -3033,22 +3663,29 @@ async function openBytes(bytes, name) {
   store.clearHistory();
   state.selected = null;
   state.search = { query: '', caseSensitive: false, hits: [], index: -1 };
+  showStart(false); // the page view must have its size before fitting the zoom
   await loadDocument(bytes, { fresh: true });
   setStatus(`Đã mở ${name} (${state.pageSizes.length} trang).`);
 }
 
+// Opens a PDF file, asking for its password if needed. Returns { encrypted } once it is open, else null.
 async function openPdfFile(file) {
-  if (!(await confirmReplace())) return;
+  if (!(await confirmReplace())) return null;
   let bytes = await readFile(file);
   let protection = null;
-  if (await isEncrypted(bytes)) {
+  const encrypted = await isEncrypted(bytes);
+  if (encrypted) {
     let unlocked;
     try {
       unlocked = await unlockPdf(bytes, file.name);
     } catch (err) {
-      return setStatus(err.message, true);
+      setStatus(err.message, true);
+      return null;
     }
-    if (!unlocked) return setStatus('Đã hủy mở tệp có mật khẩu.');
+    if (!unlocked) {
+      setStatus('Đã hủy mở tệp có mật khẩu.');
+      return null;
+    }
     ({ bytes, protection } = unlocked);
   }
   await withBusy('Đang mở tệp…', async () => {
@@ -3062,6 +3699,7 @@ async function openPdfFile(file) {
       setStatus(`Đã mở khóa ${file.name}. Khi xuất, tệp vẫn cần mật khẩu cũ (đổi ở Bảo vệ › Đặt mật khẩu).`);
     }
   });
+  return state.pdfBytes === bytes ? { encrypted } : null;
 }
 
 // Whether `password` opens the file: 'ok', 'need' (none given) or 'wrong'. pdf.js reports this
@@ -3272,6 +3910,8 @@ renderModebar();
 renderToolbar();
 renderProps();
 renderPanel();
+showStart(!state.doc);
+store.handle('quick:run', ({ card }) => runQuickTool(card));
 
 // VET VIRAL account: restore a saved session, then check announcements every 30 minutes.
 refreshAccount({ silent: true });
