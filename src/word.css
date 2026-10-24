@@ -1,0 +1,257 @@
+/* Word Studio - Document Reader and Word-like Editor Styles (White Theme) */
+
+.word-studio {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: var(--pasteboard, #f4f4f5);
+  overflow: hidden;
+  position: relative;
+}
+
+.word-studio.hidden {
+  display: none !important;
+}
+
+/* Word Format Ribbon Toolbar */
+.word-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 14px;
+  background: var(--chrome, #ffffff);
+  border-bottom: 1px solid var(--border, #e4e4e7);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  user-select: none;
+  z-index: 10;
+}
+
+.word-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.word-toolbar-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--divider, #ececef);
+  margin: 0 4px;
+}
+
+.word-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--icon, #3f3f46);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s ease;
+  font-size: 13px;
+}
+
+.word-tool-btn:hover {
+  background: var(--hover, #f4f4f5);
+  border-color: var(--border, #e4e4e7);
+  color: var(--text, #0f172a);
+}
+
+.word-tool-btn.active {
+  background: var(--selected, #eff6ff);
+  border-color: var(--accent, #2563eb);
+  color: var(--accent, #2563eb);
+}
+
+.word-select {
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #e4e4e7);
+  background: var(--field, #ffffff);
+  color: var(--text, #0f172a);
+  font-size: 12.5px;
+  padding: 0 6px;
+  cursor: pointer;
+}
+
+.word-select:focus {
+  outline: none;
+  border-color: var(--accent, #2563eb);
+}
+
+.word-color-picker-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.word-color-input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  left: 0;
+  top: 0;
+}
+
+.word-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #e4e4e7);
+  background: var(--card, #ffffff);
+  color: var(--text, #0f172a);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.word-action-btn:hover {
+  background: var(--hover, #f4f4f5);
+  border-color: var(--accent, #2563eb);
+}
+
+.word-action-btn.primary {
+  background: var(--accent, #2563eb);
+  border-color: var(--accent, #2563eb);
+  color: #ffffff;
+}
+
+.word-action-btn.primary:hover {
+  background: var(--accent-text, #1d4ed8);
+}
+
+/* Document Viewport & A4 Page Simulation */
+.word-viewport {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  padding: 32px 16px 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--pasteboard, #f4f4f5);
+  cursor: text;
+}
+
+.word-page {
+  width: 794px; /* A4 width at 96 DPI */
+  min-height: 1123px; /* A4 height at 96 DPI */
+  background: #ffffff;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 2px;
+  padding: 75px 75px; /* ~20mm standard office margin */
+  box-sizing: border-box;
+  outline: none;
+  font-family: 'Times New Roman', 'DejaVu Serif', serif;
+  font-size: 13pt;
+  line-height: 1.5;
+  color: #111827;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  transition: box-shadow 0.2s ease;
+}
+
+.word-page:focus {
+  box-shadow: 0 6px 28px rgba(37, 99, 235, 0.12), 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+/* Styled Content inside Word Page */
+.word-page h1, .word-page h2, .word-page h3, .word-page h4 {
+  color: #1e3a8a;
+  margin-top: 1.2em;
+  margin-bottom: 0.5em;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.word-page h1 { font-size: 20pt; }
+.word-page h2 { font-size: 16pt; }
+.word-page h3 { font-size: 14pt; }
+.word-page h4 { font-size: 13pt; }
+
+.word-page p {
+  margin-top: 0;
+  margin-bottom: 0.8em;
+  text-align: justify;
+}
+
+.word-page ul, .word-page ol {
+  margin-top: 0;
+  margin-bottom: 0.8em;
+  padding-left: 28px;
+}
+
+.word-page li {
+  margin-bottom: 0.3em;
+}
+
+.word-page table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+}
+
+.word-page table, .word-page th, .word-page td {
+  border: 1px solid #cbd5e1;
+}
+
+.word-page th, .word-page td {
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.word-page th {
+  background-color: #f8fafc;
+  font-weight: 600;
+}
+
+.word-page img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 8px 0;
+}
+
+.word-page hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 1.5em 0;
+}
+
+/* Status bar for Word Mode */
+.word-statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 16px;
+  background: var(--chrome, #ffffff);
+  border-top: 1px solid var(--border, #e4e4e7);
+  font-size: 12px;
+  color: var(--muted, #64748b);
+  user-select: none;
+}
+
+.word-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.word-stat-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

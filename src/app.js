@@ -100,6 +100,7 @@ import { loadOfficeFonts, measure as officeMeasure, officeFontBytes } from './of
 import { confirmDialog, el, field, icon, iconButton, isDialogOpen, openDialog, svgEl } from './dom.js';
 import { openPrintDialog } from './print.js';
 import { loadAppOptions, openOptionsDialog, saveAppOptions } from './options.js';
+import { createWordStudio } from './word-editor.js';
 import { RIBBON_TABS, commandTool, detectPlatform, formatShortcut, ribbonCommandIds, tabForCommand, toolCommand } from './ribbon.js';
 import { closeContextMenus, createPanelLayout, createRibbon, createStatusBar, openContextMenu } from './ribbonbar.js';
 
@@ -224,6 +225,8 @@ const ACTIONS = {
   themeDark: { label: 'Chủ đề tối', icon: 'info', checked: () => state.theme === 'dark', run: () => applyTheme('dark') },
   shortcuts: { label: 'Phím tắt', icon: 'command', run: showShortcuts },
   options: { label: 'Tùy chọn & Cài đặt…', icon: 'settings', key: 'Ctrl+,', run: showOptions },
+  newWordDoc: { label: 'Tạo văn bản Word mới', icon: 'word', run: () => openNewWordDoc() },
+  openWord: { label: 'Mở tệp Word (.docx)…', icon: 'word', run: () => els.docxPdfInput.click() },
   login: { label: 'Đăng nhập VET VIRAL…', icon: 'user', enabled: () => !account.signedIn, run: openLoginDialog },
   news: { label: 'Thông báo VET VIRAL', icon: 'bell', run: () => showPanel('news') },
   manageAccount: { label: 'Quản lý tài khoản VET VIRAL', icon: 'external', enabled: () => account.signedIn, run: () => openExternal(`${VETVIRAL_URL}/settings`) },
@@ -262,6 +265,7 @@ const els = {
   imagesPdfInput: $('images-pdf-input'),
   excelPdfInput: $('excel-pdf-input'),
   docxPdfInput: $('docx-pdf-input'),
+  wordStudio: $('word-studio'),
 };
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
@@ -303,6 +307,7 @@ const account = new AccountClient({ storage: safeStorage() });
 
 // Shapes, connectors, formulas, tables and rich text (src/office/). `updateMark` replaces one mark as
 // an undo step.
+let wordStudio = null;
 const office = createOfficeUi({
   state,
   commitMark: (draft) => commitMark(draft),
@@ -344,6 +349,43 @@ function download(bytes, name, type = 'application/pdf') {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+wordStudio = createWordStudio({
+  container: els.wordStudio,
+  downloadFn: download,
+  onStatus: (msg) => setStatus(msg),
+  onExportPdf: async (html, title) => {
+    withBusy('Đang xuất văn bản sang PDF…', async () => {
+      try {
+        const docxBlob = await wordStudio.buildDocx ? await wordStudio.buildDocx() : null;
+        window.print();
+      } catch (err) {
+        alert('Không thể xuất PDF: ' + err.message);
+      }
+    });
+  },
+  onPrint: () => window.print(),
+  onClose: () => {
+    els.view.classList.remove('hidden');
+    els.thumbs.closest('.panel.left')?.classList.remove('hidden');
+    if (!state.doc) els.start.classList.remove('hidden');
+  },
+});
+
+function openNewWordDoc() {
+  els.view.classList.add('hidden');
+  els.thumbs.closest('.panel.left')?.classList.add('hidden');
+  els.start.classList.add('hidden');
+  wordStudio.newWordDocument();
+}
+
+async function openWordDocxFile(file) {
+  els.view.classList.add('hidden');
+  els.thumbs.closest('.panel.left')?.classList.add('hidden');
+  els.start.classList.add('hidden');
+  const buf = await readFile(file);
+  await wordStudio.openDocx(buf, file.name);
 }
 
 function readFile(file, as = 'arrayBuffer') {
@@ -2708,7 +2750,8 @@ function showStart(on) {
         icon('upload', 22),
         el('span', { class: 'grow' }, 'Kéo thả tệp PDF vào đây để mở'),
         el('button', { class: 'primary', onclick: () => runAction('open') }, icon('open', 16), 'Mở PDF'),
-        el('button', { onclick: () => runAction('newBlank') }, icon('file', 16), 'Tài liệu trống'),
+        el('button', { onclick: () => runAction('newWordDoc') }, icon('word', 16), 'Soạn thảo Word'),
+        el('button', { onclick: () => runAction('newBlank') }, icon('file', 16), 'PDF trống'),
       ),
     ),
     quickToolsGrid(runQuickTool),
@@ -3922,8 +3965,7 @@ onFiles(els.excelPdfInput, async ([file]) => {
   await convertExcelFileToPdf(file);
 });
 onFiles(els.docxPdfInput, async ([file]) => {
-  if (!(await confirmReplace())) return;
-  await convertDocxFileToPdf(file);
+  await openWordDocxFile(file);
 });
 onFiles(els.imageInput, async ([file]) => {
   try {
@@ -3955,6 +3997,8 @@ document.addEventListener('dragover', (e) => e.preventDefault());
 document.addEventListener('drop', async (e) => {
   e.preventDefault();
   const files = [...(e.dataTransfer?.files ?? [])];
+  const docx = files.find((f) => /\.docx$/i.test(f.name));
+  if (docx) return openWordDocxFile(docx);
   const pdf = files.find((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
   if (pdf) return openPdfFile(pdf);
   const image = files.find((f) => f.type.startsWith('image/'));

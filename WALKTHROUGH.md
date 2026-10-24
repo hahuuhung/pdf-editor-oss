@@ -386,3 +386,100 @@ Tất cả **135 bài kiểm tra tự động** (`tests/*.test.mjs`) đều vư�
 - `getQualityScale`: Tính toán tỷ lệ DPI chính xác và kẹp biên an toàn.
 - `smoothStrokePoints`: Nội suy spline mượt mà cho cả dạng mảng `[x, y]` và đối tượng `{x, y}`.
 - `sanitizeAppOptions`: Làm sạch dữ liệu, ngăn chặn giá trị bất thường gây crash ứng dụng.
+
+
+---
+
+## 9. Tích Hợp Tính Năng Đọc DOCX & Soạn Thảo Văn Bản Kiểu Word (Word Studio Mode)
+
+Bản nâng cấp bổ sung chế độ **Word Studio Mode** toàn diện: cho phép mở đọc tệp `.docx` trực tiếp giữ nguyên bố cục định dạng, soạn thảo văn bản WYSIWYG trên trang A4 mô phỏng chuẩn MS Word, thanh Ribbon định dạng phong phú và xuất lưu hai chiều `.docx` / `PDF`.
+
+### 9.1. Bản phác thảo giao diện (UI Mockup - White Theme)
+
+```
++-------------------------------------------------------------------------------------------------------------------+
+| [📘] Word Studio - [Bien-ban-cuoc-hop.docx]  Tệp  Chỉnh sửa  Chèn  Định dạng  Bố cục  Xem   [💾 Lưu DOCX] [🖨 In] [⬇ PDF] |
++-------------------------------------------------------------------------------------------------------------------+
+| [ Times New Roman [▼] ] [ 13pt [▼] ] [ B ] [ I ] [ U ] [ S ] [ A [▼] ] [ 🖍 [▼] ] | [ ≡ ] [ ≢ ] [ ≣ ] [ ☷ ] | [ • List ] | [ 1. List ] | [ ⊞ Bảng ] [ 🖼 Ảnh ] [ ↶ ] [ ↷ ] |
++-------------------------------------------------------------------------------------------------------------------+
+|                                                                                                                   |
+|                  +-----------------------------------------------------------------------------+                  |
+|                  |  CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM                                         |  Trang A4 chuẩn  |
+|                  |                   Độc lập - Tự do - Hạnh phúc                               |  210 x 297 mm    |
+|                  |                                                                             |  Nền: #ffffff    |
+|                  |                         BIÊN BẢN HỌP GIAO BAN                               |  Bóng: mềm 24px  |
+|                  |                                                                             |  Lề: 20mm        |
+|                  |  I. Thời gian và địa điểm:                                                  |                  |
+|                  |  - Thời gian: 08 giờ 30 phút, ngày 24 tháng 10 năm 2026.                    |                  |
+|                  |  - Địa điểm: Phòng họp tầng 3, Trụ sở công ty.                              |                  |
+|                  |                                                                             |                  |
+|                  |  II. Thành phần tham dự:                                                    |                  |
+|                  |  +---------------------+-----------------------+-------------------------+  |                  |
+|                  |  | STT | Họ và tên     | Chức vụ               | Trách nhiệm             |  |                  |
+|                  |  +-----+---------------+-----------------------+-------------------------+  |                  |
+|                  |  | 1   | Nguyễn Văn A  | Giám đốc điều hành    | Chủ trì cuộc họp        |  |                  |
+|                  |  | 2   | Trần Thị B    | Trưởng phòng Kỹ thuật | Báo cáo tiến độ         |  |                  |
+|                  |  +-----+---------------+-----------------------+-------------------------+  |                  |
+|                  |                                                                             |                  |
+|                  |  III. Nội dung cuộc họp:                                                    |                  |
+|                  |  Nhất trí thông qua kế hoạch nâng cấp phần mềm và phân công nhiệm vụ...|    |  (Con trỏ soạn   |
+|                  |                                                                             |   thảo nhấp nháy)|
+|                  +-----------------------------------------------------------------------------+                  |
+|                                                                                                                   |
++-------------------------------------------------------------------------------------------------------------------+
+| Trang 1 / 2 · 425 từ · Tiếng Việt (Unicode dựng sẵn)                            [ 100% [▼] ] [ Vừa chiều rộng ]   |
++-------------------------------------------------------------------------------------------------------------------+
+```
+
+### 9.2. Sơ đồ quy trình xử lý (Workflow Diagram)
+
+```mermaid
+flowchart TD
+    A["Mở file .docx / Bấm 'Soạn thảo Word mới'"] --> B{"Loại thao tác"}
+    
+    B -- "Mở tệp .docx có sẵn" --> C["loadScript: Nạp thư viện Mammoth.js"]
+    C --> D["mammoth.convertToHtml: Trích xuất cấu trúc văn bản, bảng, ảnh"]
+    D --> E["cleanWordHtml: Làm sạch mã HTML, chống XSS"]
+    
+    B -- "Tạo văn bản Word mới" --> F["newWordDocument: Khởi tạo trang trắng A4 với tiêu đề mẫu"]
+    
+    E & F --> G["Kích hoạt Word Studio Mode trên Workspace"]
+    G --> H["Hiển thị Thanh công cụ định dạng Word Ribbon"]
+    H --> I["Người dùng soạn thảo trực tiếp (contenteditable WYSIWYG)"]
+    
+    subgraph Editing ["Vòng lặp Soạn thảo & Định dạng"]
+        I --> J{"Thao tác người dùng"}
+        J -- "Font, Cỡ chữ, Đậm/Nghiêng/Gạch chân" --> K["Định dạng đoạn và ký tự"]
+        J -- "Căn lề trái/giữa/phải/đều 2 bên" --> K
+        J -- "Chèn Bảng biểu / Chèn Ảnh" --> L["Tạo bảng & chèn ảnh co giãn"]
+        J -- "Gõ phím & Thụt lề" --> M["Cập nhật bộ đếm từ và ký tự thời gian thực"]
+        K & L & M --> I
+    end
+    
+    subgraph OutputExport ["Xuất Bản & Lưu Trữ"]
+        I -- "Bấm 'Lưu .docx'" --> N["buildDocxFromHtml: Tạo tài liệu OpenXML .docx chuẩn"]
+        N --> O["Packer.toBlob: Tải file .docx về máy tính"]
+        
+        I -- "Bấm 'Xuất PDF'" --> P["Chuyển đổi Word HTML sang PDF nét cao"]
+        
+        I -- "Bấm 'In'" --> Q["In trực tiếp trang văn bản A4"]
+    end
+```
+
+### 9.3. Các module và tính năng mới
+
+| Tệp | Chức năng |
+|---|---|
+| `src/word-editor.js` | Module Word Studio: `cleanWordHtml`, `countWordsAndChars`, `extractTextRunsFromNode`, `parseTableMatrixFromHtml`, `buildDocxFromHtml`, và bộ điều khiển giao diện `createWordStudio`. |
+| `src/word.css` | Giao diện White Theme chuẩn Office/Linear: Khung hiển thị trang A4 chân thực (`794px x 1123px`), thanh Ribbon công cụ định dạng, status bar đếm từ/ký tự. |
+| `src/app.js` | Tích hợp Word Studio vào luồng khởi động (`showStart`), Ribbon Trang đầu, Backstage, mở file `.docx` trực tiếp từ nút Mở hoặc kéo thả. |
+| `src/ribbon.js` | Bổ sung lệnh `newWordDoc` (Tạo văn bản Word mới) và `openWord` (Đọc Word). |
+| `tests/word.test.mjs` | Bộ 4 unit test kiểm thử thuật toán đếm từ ngữ/ký tự, làm sạch mã HTML, trích xuất text run và trích xuất ma trận bảng biểu. |
+
+### 9.4. Kết quả kiểm thử
+
+Tất cả **139 bài kiểm tra tự động** (`tests/*.test.mjs`) đều vượt qua 100%:
+- `countWordsAndChars`: Đạt (đếm chính xác từ ngữ, tổng ký tự, ký tự không khoảng trắng và số đoạn văn).
+- `cleanWordHtml`: Đạt (loại bỏ thẻ nguy hiểm `<script>`, `<iframe>` và các event listener `onclick`, `onmouseover`).
+- `extractTextRunsFromNode`: Đạt (trích xuất cấu trúc văn bản kèm kiểu dáng bold, italic, underline).
+- `parseTableMatrixFromHtml`: Đạt (bóc tách bảng nhiều dòng/cột thành ma trận dữ liệu chính xác).

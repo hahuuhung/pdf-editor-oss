@@ -85,6 +85,8 @@ export const SHORT_LABELS = Object.freeze({
   themeDark: 'Tối',
   shortcuts: 'Phím tắt',
   options: 'Tùy chọn',
+  newWordDoc: 'Word mới',
+  openWord: 'Đọc Word',
   'tool:select': 'Chọn',
   'tool:hand': 'Tay kéo',
   'tool:text': 'Thêm chữ',
@@ -117,7 +119,7 @@ export const RIBBON_TABS = Object.freeze([
     label: 'Trang đầu',
     hue: 'var(--blue)',
     groups: [
-      { label: 'Tệp', large: ['open', 'export'], small: ['print', 'newBlank', 'closeDoc'] },
+      { label: 'Tệp', large: ['open', 'export'], small: ['print', 'newBlank', 'newWordDoc', 'openWord', 'closeDoc'] },
       { label: 'Công cụ', large: ['tool:select'], small: ['tool:hand', 'tool:text', 'tool:highlight', 'tool:note', 'tool:ink', 'signature'] },
       { label: 'Trang', small: ['rotateLeft', 'rotateRight', 'deletePage'] },
       { label: 'Tìm kiếm', large: ['find'], small: ['palette'] },
@@ -210,9 +212,9 @@ export const RIBBON_TABS = Object.freeze([
 // The 'file' tab: commands in the left column ('-' is a separator), then labelled sections of
 // cards on the right. `hideDisabled` sections show only the commands that can run now.
 export const BACKSTAGE = Object.freeze({
-  nav: ['open', 'newBlank', 'closeDoc', '-', 'export', 'print', '-', 'quickTools', 'convertHub', '-', 'properties', 'chooseFont', 'options', '-', 'shortcuts'],
+  nav: ['open', 'newBlank', 'newWordDoc', 'openWord', 'closeDoc', '-', 'export', 'print', '-', 'quickTools', 'convertHub', '-', 'properties', 'chooseFont', 'options', '-', 'shortcuts'],
   sections: [
-    { label: 'Tạo PDF từ', items: ['imagesToPdf', 'docxToPdf', 'excelToPdf'] },
+    { label: 'Tạo tài liệu từ', items: ['newWordDoc', 'openWord', 'imagesToPdf', 'docxToPdf', 'excelToPdf'] },
     { label: 'Xuất thành', items: ['exportImage', 'exportImagesDpi', 'exportWord', 'exportExcel', 'exportText', 'exportHtml', 'extractImages'] },
     { label: 'Giao diện', items: ['themeSystem', 'themeLight', 'themeDark', 'ribbonClassic', 'ribbonSimple', 'ribbonTabs'] },
     { label: 'Tài khoản VET VIRAL', items: ['login', 'news', 'manageAccount', 'logout'], hideDisabled: true },
@@ -275,7 +277,7 @@ export const QAT_LIMIT = 12;
 // from its context menu too.
 export const QAT_CHOICES = Object.freeze([
   'open', 'newBlank', 'export', 'print', 'undo', 'redo', 'find', 'palette', 'quickTools', 'convertHub',
-  'tool:select', 'tool:hand', 'tool:text', 'tool:highlight', 'signature', 'protect', 'zoomIn', 'zoomOut', 'fitWidth', 'options',
+  'tool:select', 'tool:hand', 'tool:text', 'tool:highlight', 'signature', 'protect', 'zoomIn', 'zoomOut', 'fitWidth', 'options', 'newWordDoc', 'openWord',
 ]);
 
 // A stored list: unique known ids, at most `limit`. Anything but an array means "never customized".
