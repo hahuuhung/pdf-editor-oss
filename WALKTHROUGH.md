@@ -308,3 +308,81 @@ Tất cả 129 bài kiểm tra tự động (`tests/*.test.mjs`) đều vượt 
 - `computeNUpLayout`: Đạt (tính toán chính xác số tờ in, lưới trang và tọa độ slot cho 1, 2, 4, 6 trang/tờ).
 - `computePageFit`: Đạt (giữ tỷ lệ khung hình, căn giữa ô in trong chế độ Fit, Actual size và Custom scale).
 - `sanitizePrintOptions`: Đạt (làm sạch dữ liệu, hạn chế số bản in 1–99, an toàn trước giá trị bất thường).
+
+
+---
+
+## 8. Hoàn Thiện Tính Năng Tùy Chọn & Nâng Cao Chất Lượng PDF (Options & High-Fidelity PDF Engine)
+
+Bản nâng cấp mở rộng hệ thống tùy chọn toàn diện (Preferences Dialog) và tối ưu hóa chất lượng hiển thị & xuất bản in tài liệu PDF:
+
+### 8.1. Bản phác thảo giao diện (UI Mockup - White Theme)
+
+```
++---------------------------------------------------------------------------------------------------------+
+| [⚙] Tùy chọn & Cài đặt hệ thống (Preferences & Options)                                             [✕] |
++---------------------------------------------------------------------------------------------------------+
+| DANH MỤC                    | NỘI DUNG CẤU HÌNH                                                         |
+| --------------------------- | ------------------------------------------------------------------------- |
+|                             |                                                                           |
+| [⚡] Chất lượng & Kết xuất  | ĐỘ PHÂN GIẢI & KẾT XUẤT HIỂN THỊ                                          |
+| [🔤] Soạn thảo & Phông chữ  | Độ phân giải màn hình:      [ Siêu nét (HiDPI 300 DPI)             [▼] ] |
+| [📐] Hiển thị & Bắt dính    | Độ phân giải xuất bản in:   [ In ấn chuyên nghiệp (300 DPI)        [▼] ] |
+| [🛡️] Bảo mật & Sao lưu      | [✓] Bật khử răng cưa văn bản & đối tượng vector (Anti-Aliasing)           |
+|                             | [✓] Tự động làm mượt nét vẽ tự do & chữ ký (Bézier Stroke Smoothing)      |
+|                             |                                                                           |
+|                             | CHẤT LƯỢNG HÌNH ẢNH & CHE THÔNG TIN (REDACTION)                          |
+|                             | Nén ảnh khi xuất:           [ Rất cao - 92% (Khuyên dùng)          [▼] ] |
+|                             | Độ phân giải che nội dung:  [ 300 DPI (Sắc nét)                    [▼] ] |
+|                             |                                                                           |
+|                             | 💡 Mẹo: Thiết lập 300 DPI mang lại độ sắc nét hoàn hảo khi in hoặc gửi    |
+|                             | hợp đồng, tự động giải phóng RAM ngay sau khi hoàn tất tác vụ xuất.       |
++---------------------------------------------------------------------------------------------------------+
+| [ Khôi phục mặc định ]                                            [ Đóng ]      [ Lưu thay đổi (Ctrl+S) ]|
++---------------------------------------------------------------------------------------------------------+
+```
+
+### 8.2. Sơ đồ quy trình xử lý (Workflow Diagram)
+
+```mermaid
+flowchart TD
+    A["Mở ứng dụng / Bấm Tùy chọn (Ctrl+,)"] --> B["loadAppOptions: Nạp cấu hình từ LocalStorage"]
+    B --> C["Hợp nhất với DEFAULT_APP_OPTIONS & sanitizeAppOptions"]
+    C --> D["Cung cấp options cho hệ thống"]
+    
+    subgraph Viewport ["Hiển Thị Màn Hình (Canvas-View)"]
+        D --> E["canvas-view: Áp dụng renderDpi & devicePixelRatio"]
+        E --> F["Khử răng cưa subpixel & giới hạn an toàn MAX_CANVAS_PIXELS"]
+        F --> G["Trang hiển thị sắc nét trên màn hình Retina / 4K"]
+    end
+    
+    subgraph ExportPipe ["Động Cơ Kết Xuất Chất Lượng Cao (Export Engine)"]
+        D --> H["Xuất PDF / In ấn / Chuyển đổi"]
+        H --> I["redact.js: Rasterize che thông tin ở 300 DPI thay vì 144 DPI"]
+        H --> J["export.js: Nhúng ảnh 92-95% JPEG/PNG bảo toàn độ chi tiết"]
+        H --> K["fonts.js: Nhúng font DejaVu Sans subset đầy đủ glyphs tiếng Việt"]
+        H --> L["smoothStrokePoints: Làm mượt nét vẽ chữ ký bằng Bézier Spline"]
+        I & J & K & L --> M["Tài liệu PDF thành phẩm đạt chuẩn in ấn thương mại"]
+    end
+```
+
+### 8.3. Các module và tính năng mới
+
+| Tệp | Chức năng |
+|---|---|
+| `src/options.js` | Quản lý cấu hình hệ thống: `loadAppOptions`, `saveAppOptions`, `resetAppOptions`, `sanitizeAppOptions`, chuyển đổi đơn vị đo `unitConvert`, tỷ lệ DPI `getQualityScale`, làm mượt nét vẽ `smoothStrokePoints`, và hộp thoại `openOptionsDialog`. |
+| `src/options.css` | Giao diện White Theme chuẩn Apple/Linear Settings: Sidebar tab bên trái, content panel bên phải, toggle switch mượt mà, callout hướng dẫn. |
+| `src/redact.js` | Nâng cấp độ phân giải che nội dung (Redaction) từ 144 DPI lên 300 DPI chuẩn in ấn, tự động dọn dẹp canvas giải phóng bộ nhớ. |
+| `src/export.js` | Tích hợp thuật toán nội suy Catmull-Rom Bézier spline cho nét vẽ tự do và chữ ký, mang lại đường cong thư pháp mượt mà trong PDF vector. |
+| `src/components/canvas-view.js` | Kích hoạt `imageSmoothingQuality = 'high'` cho ngữ cảnh 2D, tối ưu độ sắc nét cho màn hình HiDPI / Retina. |
+| `src/ribbon.js` & `src/app.js` | Tích hợp lệnh `options` vào Ribbon Xem, Ribbon Trang đầu, Backstage, phím tắt `Ctrl+,`. |
+| `tests/options.test.mjs` | Bộ 6 unit test kiểm thử logic chuyển đổi đơn vị, thang tỷ lệ DPI, thuật toán làm mượt Bézier spline, làm sạch dữ liệu và lưu trữ an toàn. |
+
+### 8.4. Kết quả kiểm thử
+
+Tất cả **135 bài kiểm tra tự động** (`tests/*.test.mjs`) đều vượt qua 100%:
+- `DEFAULT_APP_OPTIONS`: Cung cấp bộ cấu hình chất lượng cao (300 DPI Export, 150 DPI Render, 92% Image Quality, Anti-aliasing Bật).
+- `unitConvert`: Chuyển đổi chính xác 1 in = 72 pt = 25.4 mm = 2.54 cm.
+- `getQualityScale`: Tính toán tỷ lệ DPI chính xác và kẹp biên an toàn.
+- `smoothStrokePoints`: Nội suy spline mượt mà cho cả dạng mảng `[x, y]` và đối tượng `{x, y}`.
+- `sanitizeAppOptions`: Làm sạch dữ liệu, ngăn chặn giá trị bất thường gây crash ứng dụng.

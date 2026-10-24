@@ -187,7 +187,10 @@ export class PdfCanvasView extends HTMLElement {
     if (pixels > MAX_CANVAS_PIXELS) scale *= Math.sqrt(MAX_CANVAS_PIXELS / pixels);
     const viewport = page.getViewport({ scale });
     const canvas = el('canvas', { width: Math.floor(viewport.width), height: Math.floor(viewport.height) });
-    const task = page.render({ canvasContext: canvas.getContext('2d'), viewport });
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const task = page.render({ canvasContext: ctx, viewport, intent: 'display' });
     this.#task = task;
     try {
       await task.promise;

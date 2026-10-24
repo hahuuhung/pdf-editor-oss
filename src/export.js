@@ -15,6 +15,7 @@ import { stripDiacritics } from './textlayout.js';
 import { outlineTree } from './bookmarks.js';
 import { OFFICE_TYPES, drawOpsPdf, officeOps } from './office/index.js';
 import { measure as officeMeasure } from './office/measure.js';
+import { smoothStrokePoints } from './options.js';
 
 const LINE_HEIGHT = 1.2;
 
@@ -72,7 +73,7 @@ function drawText(pc, text, vx, vy, { font, size, color, opacity = 1, angle = 0 
   }
 }
 
-function drawMark(pc, m, { bold, images }) {
+function drawMark(pc, m, { bold, images, options = {} }) {
   const color = hexToRgb(m.color);
   const seg = (a, b, opts = {}) =>
     pc.page.drawLine({
@@ -133,7 +134,7 @@ function drawMark(pc, m, { bold, images }) {
       }
       break;
     case 'ink':
-      polyline(m.points);
+      polyline(options.strokeSmoothing !== false ? smoothStrokePoints(m.points) : m.points);
       break;
     case 'symbol': {
       const { x, y, w, h } = m;
@@ -408,7 +409,7 @@ export async function exportPdf(pdfBytes, boxes, { fontBytes, marks = [], settin
       }
       drawOpsPdf(pc, ops, office, officeEncode);
     } else {
-      drawMark(pc, m, { bold, images });
+      drawMark(pc, m, { bold, images, options: settings.options });
     }
   }
 

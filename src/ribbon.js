@@ -84,6 +84,7 @@ export const SHORT_LABELS = Object.freeze({
   themeLight: 'Sáng',
   themeDark: 'Tối',
   shortcuts: 'Phím tắt',
+  options: 'Tùy chọn',
   'tool:select': 'Chọn',
   'tool:hand': 'Tay kéo',
   'tool:text': 'Thêm chữ',
@@ -201,7 +202,7 @@ export const RIBBON_TABS = Object.freeze([
       { label: 'Thu phóng', large: ['zoom100'], small: ['zoomIn', 'zoomOut', 'fitPage', 'fitWidth'] },
       { label: 'Hiển thị', large: ['toggleThumbs', 'toggleSidebar'] },
       { label: 'Bảng bên', small: ['commentsPanel', 'outline', 'find', 'forms', 'news'] },
-      { label: 'Giao diện', small: ['ribbonClassic', 'ribbonSimple', 'ribbonTabs', 'themeSystem', 'themeLight', 'themeDark'] },
+      { label: 'Giao diện', small: ['ribbonClassic', 'ribbonSimple', 'ribbonTabs', 'themeSystem', 'themeLight', 'themeDark', 'options'] },
     ],
   },
 ]);
@@ -209,7 +210,7 @@ export const RIBBON_TABS = Object.freeze([
 // The 'file' tab: commands in the left column ('-' is a separator), then labelled sections of
 // cards on the right. `hideDisabled` sections show only the commands that can run now.
 export const BACKSTAGE = Object.freeze({
-  nav: ['open', 'newBlank', 'closeDoc', '-', 'export', 'print', '-', 'quickTools', 'convertHub', '-', 'properties', 'chooseFont', '-', 'shortcuts'],
+  nav: ['open', 'newBlank', 'closeDoc', '-', 'export', 'print', '-', 'quickTools', 'convertHub', '-', 'properties', 'chooseFont', 'options', '-', 'shortcuts'],
   sections: [
     { label: 'Tạo PDF từ', items: ['imagesToPdf', 'docxToPdf', 'excelToPdf'] },
     { label: 'Xuất thành', items: ['exportImage', 'exportImagesDpi', 'exportWord', 'exportExcel', 'exportText', 'exportHtml', 'extractImages'] },
@@ -274,7 +275,7 @@ export const QAT_LIMIT = 12;
 // from its context menu too.
 export const QAT_CHOICES = Object.freeze([
   'open', 'newBlank', 'export', 'print', 'undo', 'redo', 'find', 'palette', 'quickTools', 'convertHub',
-  'tool:select', 'tool:hand', 'tool:text', 'tool:highlight', 'signature', 'protect', 'zoomIn', 'zoomOut', 'fitWidth',
+  'tool:select', 'tool:hand', 'tool:text', 'tool:highlight', 'signature', 'protect', 'zoomIn', 'zoomOut', 'fitWidth', 'options',
 ]);
 
 // A stored list: unique known ids, at most `limit`. Anything but an array means "never customized".

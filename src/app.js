@@ -99,6 +99,7 @@ import { OFFICE_DRAG_TOOLS, createOfficeUi } from './office/ui.js';
 import { loadOfficeFonts, measure as officeMeasure, officeFontBytes } from './office/measure.js';
 import { confirmDialog, el, field, icon, iconButton, isDialogOpen, openDialog, svgEl } from './dom.js';
 import { openPrintDialog } from './print.js';
+import { loadAppOptions, openOptionsDialog, saveAppOptions } from './options.js';
 import { RIBBON_TABS, commandTool, detectPlatform, formatShortcut, ribbonCommandIds, tabForCommand, toolCommand } from './ribbon.js';
 import { closeContextMenus, createPanelLayout, createRibbon, createStatusBar, openContextMenu } from './ribbonbar.js';
 
@@ -222,6 +223,7 @@ const ACTIONS = {
   themeLight: { label: 'Chủ đề sáng', icon: 'info', checked: () => state.theme === 'light', run: () => applyTheme('light') },
   themeDark: { label: 'Chủ đề tối', icon: 'info', checked: () => state.theme === 'dark', run: () => applyTheme('dark') },
   shortcuts: { label: 'Phím tắt', icon: 'command', run: showShortcuts },
+  options: { label: 'Tùy chọn & Cài đặt…', icon: 'settings', key: 'Ctrl+,', run: showOptions },
   login: { label: 'Đăng nhập VET VIRAL…', icon: 'user', enabled: () => !account.signedIn, run: openLoginDialog },
   news: { label: 'Thông báo VET VIRAL', icon: 'bell', run: () => showPanel('news') },
   manageAccount: { label: 'Quản lý tài khoản VET VIRAL', icon: 'external', enabled: () => account.signedIn, run: () => openExternal(`${VETVIRAL_URL}/settings`) },
@@ -1605,8 +1607,10 @@ function settingsContext() {
 // The full export: redaction rasters, every item and document setting. `overrides` replaces
 // settings for this build only, e.g. no watermark when extracting text.
 async function buildOutput(overrides = {}) {
-  const settings = { ...state.settings, ...overrides };
-  const raster = await rasterizeRedactions(state.doc, state.marks);
+  const appOpts = loadAppOptions();
+  const settings = { ...state.settings, options: appOpts, ...overrides };
+  const rasterScale = (appOpts.redactionDpi || 300) / 72;
+  const raster = await rasterizeRedactions(state.doc, state.marks, rasterScale);
   return exportPdf(state.pdfBytes.slice(), state.boxes, {
     fontBytes: await fontFor(exportTexts(state.boxes, state.marks, settings)),
     marks: state.marks,
@@ -3673,6 +3677,20 @@ function showShortcuts() {
   });
 }
 
+function showOptions() {
+  openOptionsDialog({
+    currentOptions: loadAppOptions(),
+    onSave: (saved) => {
+      setStatus('Đã lưu tùy chọn hệ thống.');
+      if (state.doc) renderCurrentPage();
+    },
+    onReset: () => {
+      setStatus('Đã khôi phục tùy chọn mặc định.');
+      if (state.doc) renderCurrentPage();
+    },
+  });
+}
+
 function openPalette() {
   const fold = (s) => s.toLocaleLowerCase('vi').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
   const entries = [
@@ -3966,6 +3984,7 @@ document.addEventListener('keydown', (e) => {
   if (mod && key === 's') return go(() => runAction('export'));
   if (mod && key === 'p') return go(() => runAction('print'));
   if (mod && key === 'f') return go(() => runAction('find'));
+  if (mod && (key === ',' || e.key === '<')) return go(() => runAction('options'));
   if (mod && !typing && key === 'z' && !e.shiftKey) return go(undo);
   if (mod && !typing && (key === 'y' || (key === 'z' && e.shiftKey))) return go(redo);
   if (mod && (e.key === '=' || e.key === '+')) return go(() => zoomBy(1));
