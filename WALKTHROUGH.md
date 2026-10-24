@@ -222,3 +222,89 @@ Kết quả lần thử này (Chrome, tệp thử tạo bằng pdf-lib/docx/Shee
 | 12 | Đóng tài liệu, chủ đề tối | Về màn hình khởi động; giao diện tối đúng màu; không có lỗi console |
 
 Thử tay thêm khi đổi giao diện: kéo-thả và chọn nhiều trang, Space/chuột giữa/Ctrl+lăn, bắt dính (giữ Ctrl để tắt), xem `src/components/`.
+
+
+---
+
+## 7. Hoàn thiện Bộ Tính Năng In Ấn Chuyên Nghiệp (Professional PDF Printing Suite)
+
+Bản cập nhật nâng cấp toàn diện tính năng in ấn (`Ctrl+P` / nút "In" trên Ribbon, QAT, Backstage): chuyển từ cơ chế in iframe đơn giản sang Hộp thoại In hiện đại (White Theme), xem trước tương tác thời gian thực (Live Print Preview), hỗ trợ ghép trang N-up, khổ giấy, canh lề, chế độ in tiết kiệm mực (Grayscale) và đóng dấu bản in (Watermark).
+
+### 7.1. Bản phác thảo giao diện (UI Mockup - White Theme)
+
+```
++---------------------------------------------------------------------------------------------------------+
+| [🖨] In tài liệu (Print Document)                                                                  [✕] |
++---------------------------------------------------------------------------------------------------------+
+|                                                   |                                                     |
+|  XEM TRƯỚC BẢN IN (PRINT PREVIEW)                 |  CẤU HÌNH IN (PRINT SETTINGS)                       |
+|  --------------------------------                 |  ----------------------------                       |
+|                                                   |                                                     |
+|  +---------------------------------------------+  |  BẢN IN & SỐ LƯỢNG                                  |
+|  | [N-UP: 2 TRANG/TỜ]      Khổ giấy: A4        |  |  Số bản sao: [ 1 ]                                  |
+|  | +--------------------+ +------------------+ |  |                                                     |
+|  | |                    | |                  | |  |  TRANG IN                                           |
+|  | |   Trang 1          | |  Trang 2         | |  |  (•) Tất cả (12 trang)                              |
+|  | |                    | |                  | |  |  ( ) Trang hiện tại (Trang 1)                       |
+|  | |   [Nội dung PDF]   | |  [Nội dung PDF]  | |  |  ( ) Tùy chọn dải trang: [ 1-4, 7, 9-12          ] |
+|  | |                    | |                  | |  |      Badge: Đã chọn 9 / 12 trang                    |
+|  | |   \ BẢN NHÁP \     | |  \ BẢN NHÁP \    | |  |                                                     |
+|  | +--------------------+ +------------------+ |  |  KHỔ GIẤY & BỐ CỤC                                  |
+|  |                                             |  |  Khổ giấy: [ A4 (210 × 297 mm)               [▼] ]   |
+|  | Tờ 1 / 6 (Chế độ Thang xám - Grayscale)     |  |  Chiều in: [ Tự động ] [ Chiều dọc ] [ Chiều ngang ]|
+|  +---------------------------------------------+  |  Ghép trang: [ 1 trang ] [ 2 trang ] [ 4 trang (2x2)]|
+|                                                   |                                                     |
+|  Điều khiển xem trước:                            |  TỶ LỆ & CANH LỀ                                    |
+|  [◀ Trước]  Tờ 1 / 6  [Sau ▶]      A4 · Dọc       |  Tỷ lệ: [ Vừa trang in (Fit)                 [▼] ]   |
+|                                                   |  Lề giấy: [ Bình thường (10 mm)              [▼] ]   |
+|                                                   |                                                     |
+|                                                   |  NÂNG CAO                                           |
+|                                                   |  [✓] In kèm Chú thích, Vẽ & Chữ ký                  |
+|                                                   |  Chế độ màu: (•) Màu gốc  ( ) Thang xám (Grayscale)  |
+|                                                   |  [✓] Đóng dấu mờ khi in (Watermark):                 |
+|                                                   |      Nội dung: [ BẢN NHÁP                      ]    |
++---------------------------------------------------------------------------------------------------------+
+|                                                                   [ Hủy bỏ ]    [ 🖨 In tài liệu (Enter) ] |
++---------------------------------------------------------------------------------------------------------+
+```
+
+### 7.2. Sơ đồ luồng xử lý (Workflow Diagram)
+
+```mermaid
+flowchart TD
+    A["Lệnh In (Ctrl+P / Nút In trên Ribbon / QAT)"] --> B["openPrintDialog: Mở Hộp thoại In"]
+    B --> C["Tải cấu hình in & Tính toán dải trang (resolvePrintPages)"]
+    C --> D["Hiển thị Live Preview & Cấu hình"]
+    
+    subgraph Preview ["Live Print Preview Loop"]
+        D --> E{"Người dùng điều chỉnh?"}
+        E -- "Đổi dải trang / N-up / Khổ giấy / Lề / Màu / Watermark" --> F["computeNUpLayout & computePageFit"]
+        F --> G["Render Canvas xem trước với DPI thích ứng"]
+        G --> H["Áp dụng bộ lọc Grayscale + Watermark xoay 45°"]
+        H --> D
+    end
+
+    E -- "Bấm 'In tài liệu'" --> I["generatePrintPdf: Ghép trang N-up bằng PDFLib vector"]
+    I --> J["Tạo Blob URL PDF in chất lượng cao"]
+    J --> K["printBlobThroughFrame: Nạp vào Iframe in và gọi print()"]
+    K -- "Thành công" --> L["Hộp thoại máy in hệ thống mở ra"]
+    K -- "Bị trình duyệt chặn Sandbox" --> M["Tự động mở thẻ mới window.open(url) làm phương án dự phòng"]
+```
+
+### 7.3. Các module và tính năng mới
+
+| Tệp | Chức năng |
+|---|---|
+| `src/print.js` | Module in ấn chuyên nghiệp: `resolvePrintPages`, `validateCustomRange`, `getSheetDimensions`, `computeNUpLayout`, `computePageFit`, `sanitizePrintOptions`, `generatePrintPdf`, `renderLivePreview`, `openPrintDialog`. |
+| `src/print.css` | Giao diện White Theme chuẩn Apple/Linear cho hộp thoại in, layout 2 cột (Preview bên trái, Settings bên phải), segmented buttons, icon N-up trực quan. |
+| `src/app.js` | Tích hợp `openPrintDialog` vào lệnh in `printDocument()`, kết nối phím tắt `Ctrl+P`, Ribbon và QAT. |
+| `tests/print.test.mjs` | Bộ unit test kiểm thử toàn diện logic dải trang, khổ giấy, ma trận N-up, tỷ lệ vừa trang và khử nhiễu cấu hình in. |
+
+### 7.4. Kết quả kiểm thử
+
+Tất cả 129 bài kiểm tra tự động (`tests/*.test.mjs`) đều vượt qua thành công:
+- `resolvePrintPages`: Đạt (hỗ trợ tất cả, trang hiện tại, dải trang tùy chọn `1-3, 5`, tự động kẹp biên).
+- `validateCustomRange`: Đạt (kiểm tra tính hợp lệ tức thì khi người dùng gõ phím).
+- `computeNUpLayout`: Đạt (tính toán chính xác số tờ in, lưới trang và tọa độ slot cho 1, 2, 4, 6 trang/tờ).
+- `computePageFit`: Đạt (giữ tỷ lệ khung hình, căn giữa ô in trong chế độ Fit, Actual size và Custom scale).
+- `sanitizePrintOptions`: Đạt (làm sạch dữ liệu, hạn chế số bản in 1–99, an toàn trước giá trị bất thường).

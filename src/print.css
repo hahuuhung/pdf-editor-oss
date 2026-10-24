@@ -1,0 +1,321 @@
+/* Modern White Theme styles for Print Dialog & Print Engine */
+
+.print-modal-body {
+  display: flex;
+  gap: 20px;
+  min-height: 480px;
+  max-height: calc(85vh - 120px);
+}
+
+@media (max-width: 768px) {
+  .print-modal-body {
+    flex-direction: column;
+  }
+}
+
+/* Left: Live Preview Pane */
+.print-preview-pane {
+  flex: 1.1;
+  background: var(--pasteboard, #f4f4f5);
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+}
+
+.print-preview-stage {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.print-paper-canvas {
+  background: #ffffff;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  border-radius: 2px;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.print-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding-top: 10px;
+  border-top: 1px solid var(--divider, #ececef);
+  font-size: 13px;
+  color: var(--text, #0f172a);
+}
+
+.print-preview-toolbar button {
+  background: var(--card, #ffffff);
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text, #0f172a);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.print-preview-toolbar button:hover:not(:disabled) {
+  background: var(--hover, #f4f4f5);
+  border-color: var(--accent, #2563eb);
+}
+
+.print-preview-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.print-preview-badge {
+  font-size: 11.5px;
+  color: var(--muted, #64748b);
+  background: var(--card, #ffffff);
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--border, #e4e4e7);
+}
+
+/* Right: Settings Form Pane */
+.print-settings-pane {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.print-section {
+  background: var(--subtle, #f8fafc);
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.print-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted, #64748b);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.print-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.print-row:last-child {
+  margin-bottom: 0;
+}
+
+.print-row label {
+  color: var(--text, #0f172a);
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.print-segmented {
+  display: inline-flex;
+  background: var(--pasteboard, #f4f4f5);
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+  width: 100%;
+}
+
+.print-segmented-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--muted, #64748b);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.print-segmented-btn:hover {
+  color: var(--text, #0f172a);
+}
+
+.print-segmented-btn.active {
+  background: var(--card, #ffffff);
+  color: var(--accent, #2563eb);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.print-select, .print-input {
+  width: 100%;
+  height: 32px;
+  background: var(--card, #ffffff);
+  color: var(--text, #0f172a);
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 6px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.print-select:focus, .print-input:focus {
+  outline: none;
+  border-color: var(--accent, #2563eb);
+  box-shadow: 0 0 0 2px var(--accent-soft, #dbeafe);
+}
+
+.print-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.print-pages-custom-box {
+  margin-top: 6px;
+  padding-left: 22px;
+  width: 100%;
+}
+
+.print-page-status {
+  font-size: 11.5px;
+  margin-top: 4px;
+}
+
+.print-page-status.ok {
+  color: var(--green, #2d9d5b);
+}
+
+.print-page-status.err {
+  color: var(--danger, #b42318);
+}
+
+/* N-up Selector Buttons with icons */
+.print-nup-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  width: 100%;
+}
+
+.print-nup-btn {
+  background: var(--card, #ffffff);
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 8px;
+  padding: 8px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.print-nup-btn:hover {
+  border-color: var(--accent, #2563eb);
+  background: var(--hover, #f4f4f5);
+}
+
+.print-nup-btn.active {
+  border-color: var(--accent, #2563eb);
+  background: var(--selected, #eff6ff);
+  color: var(--accent, #2563eb);
+}
+
+.print-nup-icon {
+  width: 24px;
+  height: 28px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+  display: grid;
+  padding: 2px;
+  gap: 2px;
+}
+
+.print-nup-icon.n1 { grid-template: 1fr / 1fr; }
+.print-nup-icon.n2 { grid-template: 1fr / 1fr 1fr; }
+.print-nup-icon.n4 { grid-template: 1fr 1fr / 1fr 1fr; }
+.print-nup-icon.n6 { grid-template: 1fr 1fr / 1fr 1fr 1fr; }
+
+.print-nup-cell {
+  background: currentColor;
+  opacity: 0.35;
+  border-radius: 1px;
+}
+
+.print-nup-label {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Watermark Sub-panel */
+.print-watermark-options {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--card, #ffffff);
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* High Resolution Native Print Stylesheet (injected for window.print) */
+@media print {
+  body.pdf-printing > *:not(.pdf-print-container) {
+    display: none !important;
+  }
+  .pdf-print-container {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  .pdf-print-page {
+    page-break-after: always;
+    break-after: page;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .pdf-print-page img,
+  .pdf-print-page canvas {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+}

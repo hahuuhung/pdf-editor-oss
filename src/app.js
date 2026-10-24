@@ -98,6 +98,7 @@ import { OFFICE_TYPES, resizeOffice } from './office/index.js';
 import { OFFICE_DRAG_TOOLS, createOfficeUi } from './office/ui.js';
 import { loadOfficeFonts, measure as officeMeasure, officeFontBytes } from './office/measure.js';
 import { confirmDialog, el, field, icon, iconButton, isDialogOpen, openDialog, svgEl } from './dom.js';
+import { openPrintDialog } from './print.js';
 import { RIBBON_TABS, commandTool, detectPlatform, formatShortcut, ribbonCommandIds, tabForCommand, toolCommand } from './ribbon.js';
 import { closeContextMenus, createPanelLayout, createRibbon, createStatusBar, openContextMenu } from './ribbonbar.js';
 
@@ -1849,26 +1850,14 @@ function exportPageImage() {
   });
 }
 
-// Prints the exported PDF (with every edit) through the browser's PDF viewer in a hidden frame.
+// Opens the advanced print suite with live interactive preview, N-up layout,
+// paper dimensions, grayscale eco mode, watermarks, and direct browser printing.
 function printDocument() {
-  return withBusy('Đang chuẩn bị in…', async () => {
-    const url = URL.createObjectURL(new Blob([await buildOutput()], { type: 'application/pdf' }));
-    const frame = el('iframe', { class: 'print-frame', src: url, title: 'In' });
-    frame.addEventListener('load', () => {
-      try {
-        frame.contentWindow.focus();
-        frame.contentWindow.print();
-        setStatus('Đã mở hộp thoại in.');
-      } catch {
-        window.open(url, '_blank', 'noopener');
-        setStatus('Trình duyệt chặn in trực tiếp; tệp đã mở trong thẻ mới để in.');
-      }
-    });
-    document.body.append(frame);
-    setTimeout(() => {
-      frame.remove();
-      URL.revokeObjectURL(url);
-    }, 120000);
+  openPrintDialog({
+    state,
+    buildOutput,
+    renderOutputPage,
+    onStatus: (msg) => setStatus(msg),
   });
 }
 
