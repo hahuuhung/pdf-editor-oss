@@ -101,6 +101,7 @@ import { confirmDialog, el, field, icon, iconButton, isDialogOpen, openDialog, s
 import { openPrintDialog } from './print.js';
 import { loadAppOptions, openOptionsDialog, saveAppOptions } from './options.js';
 import { createWordStudio } from './word-editor.js';
+import { openBatesDialog, openQrBarcodeDialog } from './stamping.js';
 import { RIBBON_TABS, commandTool, detectPlatform, formatShortcut, ribbonCommandIds, tabForCommand, toolCommand } from './ribbon.js';
 import { closeContextMenus, createPanelLayout, createRibbon, createStatusBar, openContextMenu } from './ribbonbar.js';
 
@@ -188,6 +189,8 @@ const ACTIONS = {
   combine: { label: 'Kết hợp thêm tệp PDF…', icon: 'merge', needsDoc: true, run: () => els.combineInput.click() },
   insertImage: { label: 'Chèn ảnh…', icon: 'image', needsDoc: true, run: () => els.imageInput.click() },
   signature: { label: 'Chữ ký…', icon: 'signature', needsDoc: true, run: openSignaturePad },
+  qrBarcode: { label: 'Mã QR, Barcode & Con dấu…', icon: 'qrcode', needsDoc: true, run: openQrBarcodeTool },
+  batesStamp: { label: 'Đóng số nhảy Bates…', icon: 'hash', needsDoc: true, run: openBatesStampTool },
   watermark: { label: 'Hình mờ…', icon: 'watermark', needsDoc: true, run: openWatermarkDialog },
   headerFooter: { label: 'Đầu/chân trang & số Bates…', icon: 'header', needsDoc: true, run: openHeaderFooterDialog },
   forms: { label: 'Điền biểu mẫu', icon: 'form', needsDoc: true, run: () => showPanel('forms') },
@@ -3697,6 +3700,43 @@ function cropToInk(canvas) {
   const out = el('canvas', { width: w, height: h });
   out.getContext('2d').drawImage(canvas, x0, y0, w, h, 0, 0, w, h);
   return out;
+}
+
+function openQrBarcodeTool() {
+  openQrBarcodeDialog({
+    state,
+    onInsertSingle: ({ page, src, x, y, w, h }) => {
+      const id = commitMark({ type: 'image', page, x, y, w, h, src });
+      setTool('select');
+      select({ kind: 'mark', id });
+    },
+    onInsertBatch: (items) => {
+      const before = snap();
+      const style = styleFor('image');
+      let marks = state.marks;
+      let lastId = null;
+      for (const it of items) {
+        lastId = nextMarkId(marks);
+        marks = addMark(marks, { ...style, type: 'image', page: it.page, x: it.x, y: it.y, w: it.w, h: it.h, src: it.src, text: '', id: lastId });
+      }
+      state.marks = marks;
+      pushHistory(before);
+      setTool('select');
+      if (lastId) select({ kind: 'mark', id: lastId });
+      refresh();
+    },
+    onStatus: (msg) => setStatus(msg),
+  });
+}
+
+function openBatesStampTool() {
+  openBatesDialog({
+    state,
+    onApply: (nextHeaderFooter) => {
+      updateSettings({ headerFooter: nextHeaderFooter });
+    },
+    onStatus: (msg) => setStatus(msg),
+  });
 }
 
 function showShortcuts() {

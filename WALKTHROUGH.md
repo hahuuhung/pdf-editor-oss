@@ -483,3 +483,84 @@ Tất cả **139 bài kiểm tra tự động** (`tests/*.test.mjs`) đều vư�
 - `cleanWordHtml`: Đạt (loại bỏ thẻ nguy hiểm `<script>`, `<iframe>` và các event listener `onclick`, `onmouseover`).
 - `extractTextRunsFromNode`: Đạt (trích xuất cấu trúc văn bản kèm kiểu dáng bold, italic, underline).
 - `parseTableMatrixFromHtml`: Đạt (bóc tách bảng nhiều dòng/cột thành ma trận dữ liệu chính xác).
+
+
+---
+
+## 10. Bộ Công Cụ Đóng Dấu Mã QR, Barcode 128B, Con Dấu Chứng Từ & Số Nhảy Bates (Document Stamping Suite)
+
+Bản nâng cấp bổ sung bộ công cụ số hóa chứng từ pháp lý và kế toán chạy hoàn toàn 100% tại trình duyệt (không phụ thuộc mạng CDN bên ngoài):
+- **Tạo & Đóng dấu Mã QR (ISO/IEC 18004)**: Mã hóa UTF-8 đa phiên bản (Version 1–10) kèm mã sửa lỗi Reed-Solomon GF(256), quét được ngay bằng camera điện thoại / Zalo.
+- **Tạo & Đóng dấu Mã vạch Barcode Code-128B (ISO/IEC 15417)**: Tự động tính toán checksum modulo-103 và dải vạch độ nét cao cho mã hồ sơ, số hóa đơn, kho vận.
+- **Con dấu Chứng từ Pháp lý / Kế toán**: Tạo dấu mộc hộp chữ nhật 2 viền (`ĐÃ THU TIỀN`, `ĐÃ CHI TIỀN`, `SAO Y BẢN CHÍNH`, `ĐÃ PHÊ DUYỆT`...) và mộc tròn đối chiếu kèm ngày tháng và người ký.
+- **Đóng số nhảy Bates Numbering chuyên biệt**: Cấu hình tiền tố, hậu tố, số bắt đầu, số chữ số đệm (`000001`), bỏ qua trang bìa và xem trước danh sách số nhảy theo thời gian thực.
+
+### 10.1. Bản phác thảo giao diện (UI Mockup - White Theme)
+
+```
++-------------------------------------------------------------------------------------------------------------+
+| [⊞] Mã QR, Barcode & Con dấu Chứng từ                                                                   [✕] |
+|     Tạo mã xác thực chuẩn ISO và đóng dấu hồ sơ 100% trên trình duyệt                                       |
++-------------------------------------------------------------------------------------------------------------+
+|  [• Mã QR (2D)]  [ Barcode 128 (1D) ]  [ Con dấu chứng từ ]   |  XEM TRƯỚC TRỰC TIẾP                        |
+|  +---------------------------------------------------------+  |  +---------------------------------------+  |
+|  | Nội dung mã (URL, Mã số chứng từ, Văn bản):             |  |  |             +-----------+             |  |
+|  | [ https://vetviral.com/verify?doc=hop-dong.pdf        ] |  |  |             | ▄▄▄▄▄ ▄▄▄ |             |  |
+|  | Mẹo: Hỗ trợ biến {page}, {total}, {date}, {file}        |  |  |             | █   █ █▄█ |             |  |
+|  |                                                         |  |  |             | █▄▄▄█ ▄ █ |             |  |
+|  | Nhãn chú thích bên dưới:                                |  |  |             | ▄▄▄▄▄ █▄█ |             |  |
+|  | [ Quét để xác thực                                    ] |  |  |             |  Quét xác |             |  |
+|  |                                                         |  |  |             +-----------+             |  |
+|  | Kích thước: [ Tiêu chuẩn (96 pt) [▼] ]  Màu: [ #0f172a ]|  |  +---------------------------------------+  |
+|  | [✓] Hiển thị khung viền mảnh quanh mã                   |  |  Kích thước thực tế: 96 × 112 pt (300 DPI)  |
+|  +---------------------------------------------------------+  |                                             |
+|  | VỊ TRÍ & PHẠM VI ÁP DỤNG                                |  |  💡 Gợi ý sử dụng:                          |
+|  | Phạm vi trang: [ Chỉ trang hiện tại (Trang 1)      [▼] ]|  |  • Chọn "Chỉ trang hiện tại" để kéo thả tự  |
+|  | Vị trí đặt:    [ Góc dưới bên phải [▼] ] Lề: [ 24 ] pt  |  |    do tới vị trí bất kỳ trên trang.         |
+|  +---------------------------------------------------------+  |  • Chọn "Đóng hàng loạt" để gắn đồng bộ.    |
++-------------------------------------------------------------------------------------------------------------+
+|                                                                           [ Hủy ]   [ Chèn vào tài liệu ]   |
++-------------------------------------------------------------------------------------------------------------+
+```
+
+### 10.2. Sơ đồ quy trình xử lý (Workflow Diagram)
+
+```mermaid
+flowchart TD
+    A["Kích hoạt từ Ribbon / Quick Tools"] --> B{"Chọn công cụ"}
+    
+    B -- "Mã QR / Barcode / Con dấu" --> C["openQrBarcodeDialog: Chọn Tab (QR / Barcode / Con dấu)"]
+    C --> D["Giải mã biến động {page}, {total}, {date}, {file}"]
+    D --> E{"Loại đồ họa"}
+    E -- "QR Code 2D" --> F["encodeQrMatrix: Mã hóa UTF-8 + Reed-Solomon GF(256)"]
+    E -- "Barcode 128B" --> G["encodeCode128B: Mã hóa vạch + Checksum Mod 103"]
+    E -- "Con dấu chứng từ" --> H["renderOfficialStampCanvas: Vẽ mộc chữ nhật / mộc tròn"]
+    
+    F & G & H --> I["Kết xuất Canvas độ phân giải cao (3x Scale / 300 DPI)"]
+    I --> J{"Phạm vi chèn"}
+    J -- "Trang hiện tại" --> K["commitMark: Chèn ảnh lên trang & chọn công cụ Select để kéo thả"]
+    J -- "Đóng hàng loạt (Tất cả / Dãy trang)" --> L["computeStampPlacement: Tính tọa độ từng trang & ghi 1 bước Undo"]
+    
+    B -- "Số nhảy Bates Numbering" --> M["openBatesDialog: Cấu hình Prefix, Suffix, Start, Digits"]
+    M --> N["generateBatesPreviewList: Xem trước dãy số nhảy theo từng trang"]
+    N --> O["Cập nhật Header/Footer Vector & Hiển thị trực tiếp trên trang"]
+```
+
+### 10.3. Các module và tính năng mới
+
+| Tệp | Chức năng |
+|---|---|
+| `src/stamping.js` | Module số hóa chứng từ: `toBarcodeAscii`, `encodeCode128B`, `encodeQrMatrix`, `formatBatesItem`, `generateBatesPreviewList`, `computeStampPlacement`, `resolveCodeDynamicText`, `renderCodeCanvas`, `renderOfficialStampCanvas`, `openQrBarcodeDialog`, `openBatesDialog`. |
+| `src/stamping.css` | Giao diện White Theme chuẩn Apple/Linear cho hộp thoại QR/Barcode/Con dấu và Bates Numbering. |
+| `src/dom.js` | Bổ sung bộ icon vector `qrcode` và `barcode`. |
+| `src/quicktools.js` & `src/ribbon.js` | Tích hợp thẻ công cụ nhanh và nút Ribbon `qrBarcode` (Mã QR/Barcode) & `batesStamp` (Số nhảy Bates) vào tab Chỉnh sửa, Ký & điền, và QAT. |
+| `src/app.js` | Kết nối lệnh `qrBarcode` và `batesStamp`, hỗ trợ chèn đơn lẻ hoặc đóng dấu hàng loạt nhiều trang với 1 bước hoàn tác (`Ctrl+Z`). |
+| `tests/stamping.test.mjs` | Bộ 5 unit test kiểm thử toàn diện thuật toán Barcode 128B, ma trận QR Code ISO 18004, chuỗi số nhảy Bates và tọa độ đóng dấu. |
+
+### 10.4. Kết quả kiểm thử & Cảnh báo rủi ro
+
+- **Kết quả Unit Test**: Toàn bộ **144/144 bài kiểm tra tự động** (`node --test tests/`) vượt qua 100%.
+- **Lưu ý rủi ro & cách phòng tránh**:
+  - *Giới hạn dung lượng mã QR*: Mã QR hỗ trợ tối đa khoảng 270 byte UTF-8 (Version 1–10, mức sửa lỗi L) để đảm bảo kích thước ô vuông rõ nét khi in trên giấy A4; nếu nhập văn bản quá dài hệ thống sẽ cảnh báo trực tiếp.
+  - *Ký tự tiếng Việt trong Barcode 1D*: Chuẩn Code-128B chỉ hỗ trợ ký tự ASCII (32–126), nên `toBarcodeAscii` tự động chuyển chữ tiếng Việt có dấu sang không dấu (`Hồ sơ` -> `Ho so`) để máy đọc mã vạch luôn quét được.
+  - *Đóng dấu hàng loạt nhiều trang*: Khi đóng mã QR có biến động `{page}` lên hàng chục trang, mỗi trang tạo một ảnh PNG riêng nhưng có kích thước nhỏ gọn (~2–4 KB/ảnh) nên không gây tràn bộ nhớ RAM.

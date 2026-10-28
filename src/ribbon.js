@@ -40,6 +40,8 @@ export const SHORT_LABELS = Object.freeze({
   watermark: 'Hình mờ',
   headerFooter: 'Đầu/chân trang',
   pageNumbers: 'Đánh số trang',
+  qrBarcode: 'Mã QR/Barcode',
+  batesStamp: 'Số nhảy Bates',
   forms: 'Điền biểu mẫu',
   rotateLeft: 'Xoay trái',
   rotateRight: 'Xoay phải',
@@ -144,8 +146,8 @@ export const RIBBON_TABS = Object.freeze([
     hue: 'var(--pink)',
     groups: [
       { label: 'Chọn', large: ['tool:select'] },
-      { label: 'Chèn', large: ['tool:text', 'insertImage'], small: ['tool:link'] },
-      { label: 'Trình bày trang', large: ['watermark', 'headerFooter'], small: ['pageNumbers'] },
+      { label: 'Chèn', large: ['tool:text', 'insertImage', 'qrBarcode'], small: ['tool:link'] },
+      { label: 'Trình bày trang', large: ['watermark', 'headerFooter'], small: ['pageNumbers', 'batesStamp'] },
       { label: 'Tài liệu', large: ['properties'], small: ['addBookmark', 'chooseFont', 'delete'] },
     ],
   },
@@ -168,7 +170,7 @@ export const RIBBON_TABS = Object.freeze([
     hue: 'var(--purple)',
     groups: [
       { label: 'Chọn', large: ['tool:select'] },
-      { label: 'Chữ ký', large: ['signature'] },
+      { label: 'Chữ ký & Mã', large: ['signature', 'qrBarcode'], small: ['batesStamp'] },
       { label: 'Điền chữ', large: ['tool:text'], small: ['tool:date'] },
       { label: 'Ký hiệu', small: ['tool:check', 'tool:cross', 'tool:dot'] },
       { label: 'Biểu mẫu', large: ['forms'] },
@@ -277,7 +279,7 @@ export const QAT_LIMIT = 12;
 // from its context menu too.
 export const QAT_CHOICES = Object.freeze([
   'open', 'newBlank', 'export', 'print', 'undo', 'redo', 'find', 'palette', 'quickTools', 'convertHub',
-  'tool:select', 'tool:hand', 'tool:text', 'tool:highlight', 'signature', 'protect', 'zoomIn', 'zoomOut', 'fitWidth', 'options', 'newWordDoc', 'openWord',
+  'tool:select', 'tool:hand', 'tool:text', 'tool:highlight', 'signature', 'qrBarcode', 'batesStamp', 'protect', 'zoomIn', 'zoomOut', 'fitWidth', 'options', 'newWordDoc', 'openWord',
 ]);
 
 // A stored list: unique known ids, at most `limit`. Anything but an array means "never customized".
