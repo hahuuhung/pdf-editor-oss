@@ -119,6 +119,7 @@ import {
   segmentDistancePt,
 } from './measure.js';
 import { createCompareWorkspace } from './compare.js';
+import { flattenPdfBytes, openBatchDialog, openFlattenDialog } from './batch.js';
 import { RIBBON_TABS, commandTool, detectPlatform, formatShortcut, ribbonCommandIds, tabForCommand, toolCommand } from './ribbon.js';
 import { closeContextMenus, createPanelLayout, createRibbon, createStatusBar, openContextMenu } from './ribbonbar.js';
 
@@ -237,6 +238,8 @@ const ACTIONS = {
   extractImages: { label: 'Tách tất cả ảnh (.zip)', icon: 'images', needsDoc: true, run: extractAllImages },
   compress: { label: 'Giảm dung lượng', icon: 'compress', needsDoc: true, run: compressDocument },
   protect: { label: 'Đặt mật khẩu…', icon: 'lock', needsDoc: true, run: openProtectDialog },
+  flattenPdf: { label: 'Làm phẳng PDF (Flatten)…', icon: 'flatten', needsDoc: true, run: openFlattenTool },
+  batchProcess: { label: 'Xử lý hàng loạt (Batch)…', icon: 'layers', run: openBatchTool },
   sanitize: { label: 'Xóa thông tin ẩn…', icon: 'sanitize', needsDoc: true, checked: () => state.settings.sanitize, run: openSanitizeDialog },
   quickTools: { label: 'Công cụ nhanh…', icon: 'bolt', run: openQuickTools },
   closeDoc: { label: 'Đóng tài liệu', icon: 'cross', needsDoc: true, run: closeDocument },
@@ -4195,6 +4198,49 @@ function openQrBarcodeTool() {
       refresh();
     },
     onStatus: (msg) => setStatus(msg),
+  });
+}
+
+function openFlattenTool() {
+  if (!state.doc) return setStatus('Hãy mở một tệp PDF trước.', true);
+  openFlattenDialog({
+    fileName: state.fileName,
+    onRun: (opts) => withBusy(opts.mode === 'raster' ? `Đang ảnh hóa trang ở ${opts.dpi} DPI…` : 'Đang làm phẳng Vector…', async () => {
+      const baked = await buildOutput({ flattenForm: true });
+      let flattened = await flattenPdfBytes(baked, opts, (p, n) => setStatus(`Đang ảnh hóa trang ${p}/${n} (${opts.dpi} DPI)…`));
+      if (opts.target === 'replace') {
+        const before = snap();
+        state.boxes = [];
+        state.marks = [];
+        state.settings = {
+          ...state.settings,
+          watermark: null,
+          headerFooter: null,
+          formValues: {},
+          customFormFields: [],
+          ocrWords: [],
+        };
+        await applyBytes(flattened, before, {
+          order: keptOrder(state.pageSizes.length),
+          changed: state.pageSizes.map((_, i) => i),
+        });
+        setStatus(`Đã làm phẳng (${opts.mode === 'raster' ? `${opts.dpi} DPI` : 'Vector'}) trực tiếp lên tài liệu. Nhấn Ctrl+Z để hoàn tác.`);
+      } else {
+        if (state.settings.protection) flattened = await encryptPdf(flattened, state.settings.protection);
+        const outName = `${baseName(state.fileName)}-flattened.pdf`;
+        download(flattened, outName);
+        setStatus(`Đã xuất tệp làm phẳng "${outName}".`);
+      }
+    }),
+  });
+}
+
+function openBatchTool() {
+  openBatchDialog({
+    getOpenPdf: () => (state.pdfBytes ? { bytes: state.pdfBytes, fileName: state.fileName } : null),
+    getFontBytes: async () => state.fontBytes || (await loadUnicodeFont('regular').catch(() => null)),
+    downloadFn: download,
+    onStatus: (msg, isErr) => setStatus(msg, isErr),
   });
 }
 

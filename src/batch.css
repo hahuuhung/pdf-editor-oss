@@ -1,0 +1,148 @@
+/* White Theme styles for 2-Mode Flatten PDF & Sequential Batch Pipeline Hub */
+
+.flt-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.flt-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border, #e4e4e7);
+  background: var(--subtle, #f8fafc);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.flt-card:hover {
+  border-color: var(--accent, #2563eb);
+}
+
+.flt-card.active {
+  border-color: var(--accent, #2563eb);
+  background: var(--selected, #eff6ff);
+}
+
+.flt-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #0f172a);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.flt-card-desc {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--muted, #64748b);
+}
+
+.batch-drop {
+  border: 1.5px dashed var(--border, #cbd5e1);
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+  background: var(--subtle, #f8fafc);
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+
+.batch-drop:hover,
+.batch-drop.dragover {
+  border-color: var(--accent, #2563eb);
+  background: var(--selected, #eff6ff);
+}
+
+.batch-file-list {
+  max-height: 165px;
+  overflow-y: auto;
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 8px;
+  background: var(--card, #ffffff);
+  margin-bottom: 12px;
+}
+
+.batch-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--divider, #ececef);
+}
+
+.batch-file-row:last-child {
+  border-bottom: none;
+}
+
+.batch-file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.batch-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 310px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.batch-step {
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 9px;
+  background: var(--card, #ffffff);
+  padding: 9px 12px;
+}
+
+.batch-step-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.batch-step-body {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--divider, #ececef);
+}
+
+.batch-progress-wrap {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.batch-progress-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--hover, #e4e4e7);
+  overflow: hidden;
+}
+
+.batch-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent, #2563eb);
+  transition: width 0.2s ease;
+}
+
+@media (max-width: 640px) {
+  .flt-modes {
+    grid-template-columns: 1fr;
+  }
+}

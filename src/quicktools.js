@@ -20,6 +20,7 @@ export const QUICK_TOOLS = [
     title: 'Sắp xếp & tối ưu',
     items: [
       { label: 'Gộp PDF', desc: 'Ghép nhiều tệp thành một, đổi thứ tự tùy ý', icon: 'merge', hue: 'var(--green)', action: 'merge' },
+      { label: 'Xử lý Hàng loạt (Batch)', desc: 'Đóng dấu mờ, số Bates liên tục, Flatten & nén nhiều PDF ra .zip', icon: 'layers', hue: 'var(--green)', action: 'batchProcess' },
       { label: 'Tách PDF', desc: 'Mỗi trang, mỗi N trang hoặc theo dãy trang', icon: 'split', hue: 'var(--green)', action: 'split' },
       { label: 'Nén PDF', desc: 'Giảm dung lượng, giữ nguyên chất lượng', icon: 'compress', hue: 'var(--green)', action: 'compress' },
       { label: 'Sắp xếp trang', desc: 'Kéo thả, xoay, xóa và chèn trang', icon: 'pages', hue: 'var(--green)', action: 'organizePages' },
@@ -48,6 +49,7 @@ export const QUICK_TOOLS = [
       { label: 'Đóng số Bates', desc: 'Đánh số nhảy hồ sơ pháp lý, kế toán (HS-000001)', icon: 'hash', hue: 'var(--purple)', action: 'batesStamp' },
       { label: 'Hình mờ', desc: 'Chữ chìm trên mọi trang', icon: 'watermark', hue: 'var(--pink)', action: 'watermark' },
       { label: 'Đặt mật khẩu', desc: 'Mã hóa AES-256, hạn chế in và sao chép', icon: 'lock', hue: 'var(--red)', action: 'protect' },
+      { label: 'Làm phẳng PDF (Flatten)', desc: 'Hàn cứng biểu mẫu, chữ ký Vector hoặc ảnh hóa 300 DPI chống sửa', icon: 'flatten', hue: 'var(--red)', action: 'flattenPdf' },
       { label: 'Gỡ mật khẩu', desc: 'Mở tệp có mật khẩu, lưu bản không khóa', icon: 'unlock', hue: 'var(--red)', action: 'unlock' },
       { label: 'Che thông tin', desc: 'Xóa hẳn nội dung dưới vùng che', icon: 'redact', hue: 'var(--red)', tool: 'redact' },
       { label: 'Xóa thông tin ẩn', desc: 'Metadata, JavaScript, tệp đính kèm', icon: 'sanitize', hue: 'var(--red)', action: 'sanitize' },

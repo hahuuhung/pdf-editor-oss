@@ -715,3 +715,41 @@ flowchart TD
 ### 14.3. Kết quả kiểm thử
 
 - Toàn bộ **167/167 bài kiểm tra tự động** (`node --test tests/`) vượt qua 100%.
+
+
+---
+
+## 15. Giai Đoạn 5: Làm Phẳng PDF 2 Chế Độ & Xử Lý Hàng Loạt (`src/batch.js`)
+
+Bản nâng cấp cung cấp công cụ niêm phong tài liệu pháp lý 2 cấp độ (**Vector Flatten** & **Hard Raster Flatten**) cùng trung tâm **Batch Pipeline** xử lý hàng loạt bộ hồ sơ nhiều tệp an toàn bộ nhớ RAM:
+
+### 15.1. Sơ đồ quy trình xử lý (Workflow Diagram)
+
+```mermaid
+flowchart TD
+    A["Lệnh 'Làm phẳng PDF' (flattenPdf)"] --> B{"Chọn chế độ Flatten"}
+    B -- "Vector Flatten" --> C["buildOutput(flattenForm: true) -> vectorFlattenPdfBytes"]
+    C --> D["Khóa AcroForm + Gỡ /Annots tương tác (tùy chọn giữ Hyperlinks) + Giữ nguyên chữ Vector tìm kiếm"]
+    B -- "Hard Raster Flatten (150-300 DPI)" --> E["rasterFlattenPdfBytes: Render từng trang sang JPEG, xóa ngay Canvas đệm khỏi RAM"]
+    D & E --> F["Xuất tệp mới hoặc Thay thế trực tiếp trên tài liệu đang mở (Hỗ trợ Ctrl+Z)"]
+
+    G["Lệnh 'Xử lý Hàng loạt' (batchProcess)"] --> H["Kéo thả N tệp PDF + Sắp xếp thứ tự"]
+    H --> I["executeBatchPipeline (Chạy tuần tự từng tệp chống tràn RAM)"]
+    I --> J["Bước 1 & 2: Watermark + Số nhảy Bates liên tục xuyên tệp (computeBatchBatesPlan)"]
+    J --> K["Bước 3: Làm phẳng Vector / Raster"]
+    K --> L["Bước 4: Nén QPDF (compressPdf) + Mã hóa mật khẩu AES-256 (encryptPdf)"]
+    L --> M["Đóng gói tự động thành 1 tệp .zip (zipFiles)"]
+```
+
+### 15.2. Các module và tính năng mới
+
+| Tệp | Chức năng |
+|---|---|
+| `src/batch.js` | Bộ làm phẳng 2 chế độ (`vectorFlattenPdfBytes`, `rasterFlattenPdfBytes`), quy hoạch số nhảy Bates liên tục xuyên suốt nhiều tệp (`computeBatchBatesPlan`), khử trùng tên tệp trong gói nén (`buildOutputFileName`), hộp thoại `openFlattenDialog` và trung tâm `openBatchDialog`. |
+| `src/batch.css` | Giao diện White Theme cho thẻ chọn chế độ Flatten, vùng kéo thả đa tệp, thanh tiến trình trực tiếp và các bước Pipeline gập mở. |
+| `src/ribbon.js`, `src/quicktools.js`, `src/app.js` | Tích hợp `flattenPdf` & `batchProcess` trên thẻ `Trang đầu`, `Trang`, `Bảo vệ`, `Tệp` (Backstage) và màn hình bắt đầu. |
+| `tests/batch.test.mjs` | Bộ 5 unit test kiểm thử cấu hình Flatten, chuỗi Batch Pipeline, số nhảy Bates liên tục xuyên tệp và chống đè tên tệp `.zip`. |
+
+### 15.3. Kết quả kiểm thử
+
+- Toàn bộ **172/172 bài kiểm tra tự động** (`node --test tests/`) vượt qua 100%.

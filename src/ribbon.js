@@ -125,6 +125,8 @@ export const SHORT_LABELS = Object.freeze({
   measureScaleDialog: 'Tỷ lệ bản vẽ',
   toggleLoupe: 'Kính lúp 3x',
   comparePdf: 'So sánh PDF',
+  flattenPdf: 'Làm phẳng PDF',
+  batchProcess: 'Xử lý hàng loạt',
 });
 
 // Tabs → groups → buttons. A group shows its `large` buttons (icon above a label) first, then its
@@ -141,7 +143,7 @@ export const RIBBON_TABS = Object.freeze([
       { label: 'Công cụ', large: ['tool:select', 'tool:editPdfText'], small: ['tool:hand', 'tool:text', 'tool:highlight', 'tool:note', 'tool:ink', 'signature'] },
       { label: 'Trang', small: ['rotateLeft', 'rotateRight', 'deletePage'] },
       { label: 'Tìm kiếm', large: ['find'], small: ['palette'] },
-      { label: 'Công cụ nhanh', large: ['quickTools', 'comparePdf'], small: ['convertHub', 'compress', 'protect'] },
+      { label: 'Công cụ nhanh', large: ['quickTools', 'comparePdf', 'batchProcess'], small: ['convertHub', 'compress', 'protect'] },
     ],
   },
   {
@@ -179,7 +181,7 @@ export const RIBBON_TABS = Object.freeze([
       { label: 'Thêm & xóa', large: ['insertBlank'], small: ['duplicatePage', 'deletePage'] },
       { label: 'Tách & gộp', large: ['split', 'merge'], small: ['extractPages', 'combine'] },
       { label: 'Cắt', large: ['crop'] },
-      { label: 'Xuất', small: ['exportImage', 'exportImagesDpi'] },
+      { label: 'Xuất & Hàng loạt', large: ['batchProcess'], small: ['exportImage', 'exportImagesDpi'] },
     ],
   },
   {
@@ -213,7 +215,7 @@ export const RIBBON_TABS = Object.freeze([
     hue: 'var(--red)',
     groups: [
       { label: 'Che thông tin', large: ['tool:redact'], small: [{ cmd: 'find', label: 'Tìm để che' }, 'tool:select'] },
-      { label: 'Bảo mật', large: ['protect', 'sanitize'], small: ['unlock'] },
+      { label: 'Bảo mật & Làm phẳng', large: ['protect', 'flattenPdf', 'batchProcess'], small: ['sanitize', 'unlock'] },
     ],
   },
   {
@@ -232,7 +234,7 @@ export const RIBBON_TABS = Object.freeze([
 // The 'file' tab: commands in the left column ('-' is a separator), then labelled sections of
 // cards on the right. `hideDisabled` sections show only the commands that can run now.
 export const BACKSTAGE = Object.freeze({
-  nav: ['open', 'newBlank', 'newWordDoc', 'openWord', 'closeDoc', '-', 'export', 'print', '-', 'quickTools', 'convertHub', 'comparePdf', '-', 'properties', 'chooseFont', 'options', '-', 'shortcuts'],
+  nav: ['open', 'newBlank', 'newWordDoc', 'openWord', 'closeDoc', '-', 'export', 'print', '-', 'quickTools', 'convertHub', 'comparePdf', 'batchProcess', 'flattenPdf', '-', 'properties', 'chooseFont', 'options', '-', 'shortcuts'],
   sections: [
     { label: 'Tạo tài liệu từ', items: ['newWordDoc', 'openWord', 'imagesToPdf', 'docxToPdf', 'excelToPdf'] },
     { label: 'Xuất thành', items: ['exportImage', 'exportImagesDpi', 'exportWord', 'exportExcel', 'exportText', 'exportHtml', 'extractImages'] },

@@ -115,6 +115,8 @@ export const ICONS = {
   angle: '<path d="M19 19H5L15 5"/><path d="M12 19a7 7 0 00-1.4-4.2"/>',
   loupe: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M10.5 7.5v6M7.5 10.5h6"/>',
   compare: '<rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/><path d="M6 9h2M16 9h2M16 13h2"/>',
+  flatten: '<path d="M4 17h16M4 21h16M12 3v10M8 9l4 4 4-4"/>',
+  layers: '<polygon points="12,3 21,8 12,13 3,8"/><path d="M3 13l9 5 9-5M3 17.5l9 5 9-5"/>',
 };
 
 export function icon(name, size = 18) {
