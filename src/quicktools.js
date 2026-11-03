@@ -41,6 +41,7 @@ export const QUICK_TOOLS = [
     title: 'Ký & bảo vệ',
     items: [
       { label: 'Ký tên', desc: 'Vẽ chữ ký rồi đặt lên trang', icon: 'signature', hue: 'var(--purple)', action: 'signature' },
+      { label: 'Tự dò & Tạo Biểu mẫu', desc: 'Biến dòng chấm ..... và ô ☐ thành trường AcroForm điền được', icon: 'wand', hue: 'var(--purple)', action: 'autoDetectForms' },
       { label: 'Mã QR & Barcode', desc: 'Tạo mã QR, Barcode 128 & đóng dấu chứng từ', icon: 'qrcode', hue: 'var(--purple)', action: 'qrBarcode' },
       { label: 'Đóng số Bates', desc: 'Đánh số nhảy hồ sơ pháp lý, kế toán (HS-000001)', icon: 'hash', hue: 'var(--purple)', action: 'batesStamp' },
       { label: 'Hình mờ', desc: 'Chữ chìm trên mọi trang', icon: 'watermark', hue: 'var(--pink)', action: 'watermark' },

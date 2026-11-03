@@ -16,6 +16,7 @@ import { outlineTree } from './bookmarks.js';
 import { OFFICE_TYPES, drawOpsPdf, officeOps } from './office/index.js';
 import { measure as officeMeasure } from './office/measure.js';
 import { smoothStrokePoints } from './options.js';
+import { sanitizeCustomField } from './form-builder.js';
 
 const LINE_HEIGHT = 1.2;
 
@@ -305,9 +306,74 @@ function sanitizeDocument(doc) {
   doc.setProducer('');
 }
 
-function applyForm(doc, values, flatten, font) {
+function writeCustomFormFields(doc, pages, customFields, formValues, font) {
+  if (!Array.isArray(customFields) || !customFields.length) return {};
+  const form = doc.getForm();
+  const extraValues = {};
+  const borderColor = PDFLib.rgb(0.45, 0.52, 0.64);
+  const bgColor = PDFLib.rgb(0.98, 0.99, 1);
+
+  const safeUniqueName = (base) => {
+    if (!form.getFieldMaybe(base)) return base;
+    let k = 2;
+    while (form.getFieldMaybe(`${base}_${k}`)) k++;
+    return `${base}_${k}`;
+  };
+
+  for (let i = 0; i < customFields.length; i++) {
+    const cf = sanitizeCustomField(customFields[i], i + 1);
+    const pc = pages[cf.page];
+    if (!pc) continue;
+    const r = pc.rect(cf.x, cf.y, cf.w, cf.h);
+
+    if (cf.kind === 'radio') {
+      const existing = form.getFieldMaybe(cf.name);
+      const rg = existing instanceof PDFLib.PDFRadioGroup
+        ? existing
+        : form.createRadioGroup(safeUniqueName(cf.name));
+      let optVal = cf.optionValue || `opt_${i + 1}`;
+      while (rg.getOptions().includes(optVal)) optVal = `${optVal}_${i + 1}`;
+      rg.addOptionToPage(optVal, pc.page, { ...r, borderWidth: 0.75, borderColor });
+      if (cf.required) rg.enableRequired();
+      if (cf.readOnly) rg.enableReadOnly();
+      const chosen = formValues?.[cf.name] ?? cf.defaultValue;
+      if (chosen) extraValues[rg.getName()] = chosen;
+      continue;
+    }
+
+    const name = safeUniqueName(cf.name);
+    const val = formValues?.[cf.name] !== undefined ? formValues[cf.name] : cf.defaultValue;
+
+    if (cf.kind === 'check') {
+      const cb = form.createCheckBox(name);
+      cb.addToPage(pc.page, { ...r, borderWidth: 0.75, borderColor, backgroundColor: bgColor });
+      if (cf.required) cb.enableRequired();
+      if (cf.readOnly) cb.enableReadOnly();
+      extraValues[name] = !!val;
+    } else if (cf.kind === 'choice') {
+      const dd = form.createDropdown(name);
+      if (cf.options.length) dd.addOptions(cf.options);
+      dd.addToPage(pc.page, { ...r, font, borderWidth: 0.75, borderColor, backgroundColor: bgColor });
+      dd.setFontSize(cf.fontSize);
+      if (cf.required) dd.enableRequired();
+      if (cf.readOnly) dd.enableReadOnly();
+      if (val && cf.options.includes(String(val))) extraValues[name] = String(val);
+    } else {
+      const tf = form.createTextField(name);
+      if (cf.multiline) tf.enableMultiline();
+      if (cf.required) tf.enableRequired();
+      if (cf.readOnly) tf.enableReadOnly();
+      tf.addToPage(pc.page, { ...r, font, borderWidth: 0.75, borderColor, backgroundColor: bgColor });
+      tf.setFontSize(cf.fontSize);
+      extraValues[name] = String(val ?? '');
+    }
+  }
+  return extraValues;
+}
+
+function applyForm(doc, values, flatten, font, hasCustom = false) {
   const names = Object.keys(values ?? {});
-  if (!names.length && !flatten) return false;
+  if (!names.length && !flatten && !hasCustom) return false;
   let form;
   try {
     form = doc.getForm();
@@ -446,7 +512,9 @@ export async function exportPdf(pdfBytes, boxes, { fontBytes, marks = [], settin
     if (m.type === 'link') addLinkAnnotation(doc, pc, m);
   }
 
-  const formTouched = applyForm(doc, settings.formValues, settings.flattenForm, regular);
+  const customValues = writeCustomFormFields(doc, pages, settings.customFormFields, settings.formValues, regular);
+  const mergedFormValues = { ...(settings.formValues ?? {}), ...customValues };
+  const formTouched = applyForm(doc, mergedFormValues, settings.flattenForm, regular, (settings.customFormFields?.length ?? 0) > 0);
 
   // Bookmarks edited in the outline panel replace the document's own outline (null: keep it).
   if (Array.isArray(settings.bookmarks)) writeOutline(doc, settings.bookmarks);

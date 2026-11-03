@@ -103,6 +103,13 @@ import { loadAppOptions, openOptionsDialog, saveAppOptions } from './options.js'
 import { createWordStudio } from './word-editor.js';
 import { openBatesDialog, openQrBarcodeDialog } from './stamping.js';
 import { buildInlineReplacement, createInlineTextEditor } from './inline-edit.js';
+import {
+  createFormOverlayController,
+  detectCandidateFields,
+  nextCustomFieldId,
+  openFormFieldDialog,
+  sanitizeCustomField,
+} from './form-builder.js';
 import { RIBBON_TABS, commandTool, detectPlatform, formatShortcut, ribbonCommandIds, tabForCommand, toolCommand } from './ribbon.js';
 import { closeContextMenus, createPanelLayout, createRibbon, createStatusBar, openContextMenu } from './ribbonbar.js';
 
@@ -117,6 +124,7 @@ const EMPTY_SETTINGS = Object.freeze({
   headerFooter: null,
   meta: null,
   formValues: {},
+  customFormFields: [],
   flattenForm: false,
   protection: null, // { userPassword, ownerPassword, allowPrint, allowCopy, allowModify } applied on save
   sanitize: false,
@@ -152,9 +160,10 @@ const TOOL_INFO = {
   shape: { label: 'Hình vẽ', icon: 'shape' },
   connector: { label: 'Đường nối', icon: 'connector' },
   richtext: { label: 'Hộp chữ định dạng', icon: 'richtext' },
+  formField: { label: 'Tạo ô biểu mẫu AcroForm', icon: 'formAdd' },
 };
 const TYPE_LABELS = { text: 'Chữ', image: 'Hình ảnh', symbol: 'Ký hiệu', formula: 'Công thức', table: 'Bảng' };
-const DRAG_TOOLS = new Set(['highlight', 'underline', 'strike', 'squiggly', 'rect', 'oval', 'line', 'arrow', 'ink', 'link', 'redact', ...OFFICE_DRAG_TOOLS]);
+const DRAG_TOOLS = new Set(['highlight', 'underline', 'strike', 'squiggly', 'rect', 'oval', 'line', 'arrow', 'ink', 'link', 'redact', 'formField', ...OFFICE_DRAG_TOOLS]);
 const STROKE_TYPES = new Set(['underline', 'strike', 'squiggly', 'rect', 'oval', 'line', 'arrow', 'ink', 'stamp', 'symbol', 'shape', 'connector']);
 
 const typeLabel = (type) => TYPE_LABELS[type] ?? TOOL_INFO[type]?.label ?? type;
@@ -196,6 +205,7 @@ const ACTIONS = {
   watermark: { label: 'Hình mờ…', icon: 'watermark', needsDoc: true, run: openWatermarkDialog },
   headerFooter: { label: 'Đầu/chân trang & số Bates…', icon: 'header', needsDoc: true, run: openHeaderFooterDialog },
   forms: { label: 'Điền biểu mẫu', icon: 'form', needsDoc: true, run: () => showPanel('forms') },
+  autoDetectForms: { label: 'Tự dò ô biểu mẫu trên trang', icon: 'wand', needsDoc: true, run: runAutoDetectForms },
   ocr: { label: 'Nhận dạng chữ (OCR)…', icon: 'scan', needsDoc: true, run: openOcrDialog },
   toggleOcr: { label: 'Hiện/ẩn khung chữ OCR', icon: 'scan', needsDoc: true, checked: () => state.showOcr, run: toggleOcrBoxes },
   exportText: { label: 'Xuất văn bản (.txt)', icon: 'file', needsDoc: true, run: () => exportContent('txt') },
@@ -348,6 +358,36 @@ const inlineEditor = createInlineTextEditor({
     return true;
   },
   onStatus: (msg) => setStatus(msg),
+});
+
+let formSnapBefore = null;
+const formOverlay = createFormOverlayController({
+  state,
+  onLiveValue: (name, value) => {
+    if (!formSnapBefore) formSnapBefore = snap();
+    state.settings = { ...state.settings, formValues: { ...state.settings.formValues, [name]: value } };
+    if (state.panel === 'forms') renderForms();
+  },
+  onCommitValue: (name, value, { alreadyUpdated = false } = {}) => {
+    if (alreadyUpdated) {
+      if (formSnapBefore) {
+        pushHistory(formSnapBefore);
+        formSnapBefore = null;
+      }
+      if (state.panel === 'forms') renderForms();
+    } else {
+      updateSettings({ formValues: { ...state.settings.formValues, [name]: value } });
+    }
+  },
+  onEditCustomField: (id) => openEditCustomFormField(id),
+  onMoveCustomField: (id, x, y) => {
+    const customFormFields = (state.settings.customFormFields ?? []).map((f) => (f.id === id ? sanitizeCustomField({ ...f, x, y }) : f));
+    updateSettings({ customFormFields });
+  },
+  onResizeCustomField: (id, w, h) => {
+    const customFormFields = (state.settings.customFormFields ?? []).map((f) => (f.id === id ? sanitizeCustomField({ ...f, w, h }) : f));
+    updateSettings({ customFormFields });
+  },
 });
 let ribbon = null; // created at startup (ribbonbar.js)
 let layout = null; // side-panel columns and drawers
@@ -838,6 +878,7 @@ function renderPageOverlay(i) {
   div.append(svg);
   for (const b of state.boxes) if (b.page === i) div.append(boxElement(b));
   inlineEditor.renderPageSlots(i, div);
+  formOverlay.renderPageFormLayer(i, div);
 }
 
 // Watermark and header/footer preview, drawn the same way the exporter places them.
@@ -1104,6 +1145,14 @@ function onGestureEnd(e) {
   if (!g || e.pointerId !== g.pointerId) return;
   cancelGesture();
   const draft = draftFromGesture(g);
+  if (g.tool === 'formField') {
+    const r = normalizeRect(g.x0, g.y0, g.x, g.y);
+    const rect = r.w < 8 && r.h < 8
+      ? { x: g.x0, y: Math.max(0, g.y0 - 11), w: 150, h: 22 }
+      : { x: r.x, y: r.y, w: Math.max(14, r.w), h: Math.max(14, r.h) };
+    openCreateFormFieldAt(g.page, rect);
+    return;
+  }
   if (draft) commitMark(draft);
 }
 
@@ -1116,6 +1165,10 @@ function cancelGesture() {
 }
 
 function draftFromGesture(g) {
+  if (g.tool === 'formField') {
+    const r = normalizeRect(g.x0, g.y0, g.x, g.y);
+    return r.w >= 4 || r.h >= 4 ? { type: 'rect', page: g.page, ...r, color: '#7c3aed', fill: '#ede9fe', width: 1.5, opacity: 0.7 } : null;
+  }
   if (OFFICE_DRAG_TOOLS.has(g.tool)) return office.draft(g);
   if (g.tool === 'ink') {
     const points = simplifyInk(g.pts);
@@ -1373,6 +1426,16 @@ function renderProps() {
   const v = item ?? styleFor(type);
   const title = sel ? `Đã chọn: ${typeLabel(type)}` : TOOL_INFO[state.tool]?.label ?? typeLabel(type);
   const row = [el('span', { class: 'title' }, title)];
+  if (type === 'formField') {
+    row.push(
+      el('span', { class: 'lbl' }, 'Kéo thả hoặc nhấp trên trang để tạo ô biểu mẫu AcroForm (TextField, CheckBox, Dropdown, Radio).'),
+      el('span', { style: 'flex:1' }),
+      el('button', { onclick: runAutoDetectForms }, icon('wand', 15), 'Tự dò ô biểu mẫu'),
+    );
+    els.propsbar.replaceChildren(...row);
+    els.propsbar.classList.remove('hidden');
+    return;
+  }
   if (type === 'editPdfText') {
     row.push(el('span', { class: 'lbl' }, 'Nhấp vào bất kỳ dòng chữ có sẵn trên trang để sửa trực tiếp (Enter để lưu, Esc để hủy, Ctrl+Z hoàn tác).'));
     els.propsbar.replaceChildren(...row);
@@ -1652,29 +1715,180 @@ function marksFromHits(type) {
   setStatus(type === 'redact' ? `Đã đánh dấu che ${hits.length} vị trí. Nội dung bị xóa khi xuất.` : `Đã tô sáng ${hits.length} vị trí.`);
 }
 
+function allExistingFormNames() {
+  return [
+    ...state.formFields.map((f) => f.name),
+    ...(state.settings.customFormFields ?? []).map((f) => f.name),
+  ];
+}
+
+function openCreateFormFieldAt(page, rect) {
+  const custom = state.settings.customFormFields ?? [];
+  const nextIdStr = nextCustomFieldId(custom);
+  openFormFieldDialog({
+    initial: {
+      id: nextIdStr,
+      name: `truong_${custom.length + 1}`,
+      kind: 'text',
+      page,
+      ...rect,
+    },
+    existingNames: allExistingFormNames(),
+    isEdit: false,
+    onSave: (saved) => {
+      const nextFields = [...custom, saved];
+      const nextValues = saved.defaultValue !== '' && saved.defaultValue !== false
+        ? { ...state.settings.formValues, [saved.name]: saved.defaultValue }
+        : state.settings.formValues;
+      updateSettings({ customFormFields: nextFields, formValues: nextValues });
+      showPanel('forms');
+      setStatus(`Đã tạo trường biểu mẫu "${saved.name}" trên trang ${page + 1}.`);
+    },
+  });
+}
+
+function openEditCustomFormField(id) {
+  const custom = state.settings.customFormFields ?? [];
+  const target = custom.find((f) => f.id === id);
+  if (!target) return;
+  openFormFieldDialog({
+    initial: target,
+    existingNames: allExistingFormNames(),
+    isEdit: true,
+    onSave: (saved) => {
+      const nextFields = custom.map((f) => (f.id === id ? saved : f));
+      const nextValues = { ...state.settings.formValues };
+      if (target.name !== saved.name && nextValues[target.name] !== undefined) {
+        nextValues[saved.name] = nextValues[target.name];
+        delete nextValues[target.name];
+      }
+      updateSettings({ customFormFields: nextFields, formValues: nextValues });
+      setStatus(`Đã cập nhật trường "${saved.name}".`);
+    },
+    onDelete: (delId) => {
+      updateSettings({ customFormFields: custom.filter((f) => f.id !== delId) });
+      setStatus(`Đã xóa trường "${target.name}".`);
+    },
+  });
+}
+
+async function runAutoDetectForms() {
+  if (!state.doc) return setStatus('Hãy mở một tệp PDF trước.', true);
+  await withBusy('Đang tự động dò các dòng chấm và ô trống biểu mẫu…', async () => {
+    const custom = [...(state.settings.customFormFields ?? [])];
+    const usedNames = allExistingFormNames();
+    let createdCount = 0;
+
+    for (let p = 0; p < state.pageSizes.length; p++) {
+      const items = await pageTextItems(p);
+      const existingRects = [
+        ...state.formFields.flatMap((f) => (f.widgets ?? []).filter((w) => w.page === p)),
+        ...custom.filter((f) => f.page === p),
+      ];
+      const found = detectCandidateFields(items, existingRects, { page: p, existingNames: usedNames });
+      for (const cand of found) {
+        const id = nextCustomFieldId(custom);
+        custom.push({ ...cand, id });
+        usedNames.push(cand.name);
+        createdCount++;
+      }
+    }
+
+    if (!createdCount) {
+      showPanel('forms');
+      setStatus('Không phát hiện thêm dòng chấm (.....) hay ô trống (☐) mới nào. Bạn có thể dùng công cụ "Tạo ô mẫu" để kẻ thủ công.');
+      return;
+    }
+    updateSettings({ customFormFields: custom });
+    setTool('select');
+    showPanel('forms');
+    setStatus(`Đã tự động phát hiện và tạo ${createdCount} trường biểu mẫu AcroForm! Nhấp trực tiếp lên trang để điền (Tab chuyển ô).`);
+  });
+}
+
 function renderForms() {
   els.formsPanel.replaceChildren();
-  if (!state.formFields.length) {
-    els.formsPanel.append(el('p', { class: 'lbl empty-note' }, state.pdfBytes ? 'Tài liệu không có trường biểu mẫu nào. Dùng chế độ Ký & điền để thêm chữ, dấu tích hoặc chữ ký lên trang.' : 'Mở một tệp PDF để điền biểu mẫu.'));
+  if (!state.pdfBytes) {
+    els.formsPanel.append(el('p', { class: 'lbl empty-note' }, 'Mở một tệp PDF để điền hoặc thiết kế biểu mẫu AcroForm.'));
     return;
   }
+
+  els.formsPanel.append(
+    el('div', { class: 'forms-toolbar' },
+      el('button', { class: 'primary', onclick: () => setTool('formField') }, icon('formAdd', 14), 'Tạo ô mẫu'),
+      el('button', { onclick: runAutoDetectForms }, icon('wand', 14), 'Tự dò biểu mẫu'),
+    ),
+  );
+
+  const customList = state.settings.customFormFields ?? [];
+  const allEntries = [
+    ...state.formFields.map((f) => ({ ...f, isCustom: false })),
+    ...customList.map((cf) => ({
+      name: cf.name,
+      label: cf.label,
+      kind: cf.kind,
+      value: cf.defaultValue,
+      options: cf.kind === 'radio' ? [cf.optionValue || '1'] : cf.options,
+      multiline: cf.multiline,
+      isCustom: true,
+      customId: cf.id,
+      page: cf.page,
+    })),
+  ];
+
+  if (!allEntries.length) {
+    els.formsPanel.append(el('p', { class: 'lbl empty-note' }, 'Chưa có trường AcroForm nào. Bấm "Tự dò biểu mẫu" để nhận diện các dòng chấm (.....) & ô ☐, hoặc bấm "Tạo ô mẫu" để kẻ trực tiếp trên trang.'));
+    return;
+  }
+
   const values = state.settings.formValues;
   const setValue = (name, value) => updateSettings({ formValues: { ...state.settings.formValues, [name]: value } });
-  for (const f of state.formFields) {
-    const value = values[f.name] ?? f.value;
+
+  // Deduplicate radio groups in sidebar display while preserving options
+  const seenRadio = new Map();
+  const displayEntries = [];
+  for (const entry of allEntries) {
+    if (entry.kind === 'radio' && entry.isCustom) {
+      if (seenRadio.has(entry.name)) {
+        const prev = seenRadio.get(entry.name);
+        for (const o of entry.options ?? []) if (!prev.options.includes(o)) prev.options.push(o);
+        continue;
+      }
+      const copy = { ...entry, options: [...(entry.options ?? [])] };
+      seenRadio.set(entry.name, copy);
+      displayEntries.push(copy);
+    } else {
+      displayEntries.push(entry);
+    }
+  }
+
+  for (const f of displayEntries) {
+    const value = values[f.name] !== undefined ? values[f.name] : f.value;
     let input;
     if (f.kind === 'check') input = el('input', { type: 'checkbox', checked: !!value, onchange: (e) => setValue(f.name, e.target.checked) });
     else if (f.kind === 'choice' || f.kind === 'radio')
-      input = el('select', { onchange: (e) => setValue(f.name, e.target.value) }, el('option', { value: '' }, '—'), f.options.map((o) => el('option', { value: o, selected: o === value }, o)));
+      input = el('select', { onchange: (e) => setValue(f.name, e.target.value) }, el('option', { value: '' }, '—'), (f.options ?? []).map((o) => el('option', { value: o, selected: o === value }, o)));
     else input = el(f.multiline ? 'textarea' : 'input', { type: 'text', value, onchange: (e) => setValue(f.name, e.target.value) });
     if (f.multiline) input.value = value;
-    els.formsPanel.append(el('label', { class: `form-field${f.kind === 'check' ? ' inline' : ''}` }, el('span', { class: 'lbl' }, f.name), input));
+
+    const head = el('span', { class: 'form-field-head' },
+      el('span', { class: 'lbl' }, f.label ? `${f.label} (${f.name})` : f.name),
+      f.isCustom
+        ? el('span', {},
+            el('span', { class: 'form-field-tag' }, `T${f.page + 1}`),
+            iconButton('settings', 'Sửa thuộc tính trường', () => openEditCustomFormField(f.customId)),
+          )
+        : null,
+    );
+    els.formsPanel.append(el('div', { class: `form-field${f.kind === 'check' ? ' inline' : ''}` }, head, input));
   }
+
   els.formsPanel.append(
     el('label', { class: 'lbl small form-flatten' }, el('input', { type: 'checkbox', checked: state.settings.flattenForm, onchange: (e) => updateSettings({ flattenForm: e.target.checked }) }), 'Làm phẳng biểu mẫu khi xuất (không sửa được nữa)'),
-    el('button', { onclick: () => updateSettings({ formValues: Object.fromEntries(state.formFields.map((f) => [f.name, f.kind === 'check' ? false : ''])) }) }, 'Xóa dữ liệu đã điền'),
+    el('button', { onclick: () => updateSettings({ formValues: Object.fromEntries(displayEntries.map((f) => [f.name, f.kind === 'check' ? false : ''])) }) }, 'Xóa dữ liệu đã điền'),
   );
 }
+
 
 // ---------- document and page operations ----------
 
@@ -1704,9 +1918,11 @@ async function bakePage(indices) {
   const pages = new Set(indices);
   const boxes = state.boxes.filter((b) => pages.has(b.page));
   const marks = state.marks.filter((m) => pages.has(m.page));
-  if (!boxes.length && !marks.length) return state.pdfBytes;
+  const customFormFields = (state.settings.customFormFields ?? []).filter((f) => pages.has(f.page));
+  if (!boxes.length && !marks.length && !customFormFields.length) return state.pdfBytes;
   const raster = await rasterizeRedactions(state.doc, marks);
-  return exportPdf(state.pdfBytes.slice(), boxes, { fontBytes: await fontFor(exportTexts(boxes, marks)), marks, rasterPages: raster, officeFonts: await officeFontBytes(marks) });
+  const bakeSettings = { customFormFields, formValues: state.settings.formValues };
+  return exportPdf(state.pdfBytes.slice(), boxes, { fontBytes: await fontFor(exportTexts(boxes, marks, bakeSettings)), marks, settings: bakeSettings, rasterPages: raster, officeFonts: await officeFontBytes(marks) });
 }
 
 // Replaces the document bytes as one undo step. `remap` re-indexes everything tied to a page
@@ -1718,7 +1934,11 @@ async function applyBytes(bytes, before, { remap, current, order, changed } = {}
   if (remap) {
     state.boxes = remap(state.boxes);
     state.marks = remap(state.marks);
-    state.settings = { ...state.settings, ocrWords: remap(state.settings.ocrWords) };
+    state.settings = {
+      ...state.settings,
+      ocrWords: remap(state.settings.ocrWords),
+      customFormFields: remap(state.settings.customFormFields ?? []),
+    };
   }
   // Edited bookmarks follow their pages; the file's own outline follows them by itself.
   if (order && state.settings.bookmarks) state.settings = { ...state.settings, bookmarks: remapBookmarks(state.settings.bookmarks, order) };
@@ -1744,7 +1964,7 @@ function rotateDocPages(pages, delta) {
   return withBusy('Đang xoay trang…', async () => {
     const turned = new Set(pages);
     const before = snap();
-    const baked = state.boxes.some((b) => turned.has(b.page)) || state.marks.some((m) => turned.has(m.page));
+    const baked = state.boxes.some((b) => turned.has(b.page)) || state.marks.some((m) => turned.has(m.page)) || (state.settings.customFormFields ?? []).some((f) => turned.has(f.page));
     const hadOcr = state.settings.ocrWords.some((w) => turned.has(w.page));
     const bytes = await rotatePages(await bakePage(pages), pages, delta);
     // Items on the pages were written into the PDF; OCR boxes no longer match the turned pages.
@@ -2821,6 +3041,7 @@ async function closeDocument() {
   if (!(await confirmReplace())) return;
   state.doc?.destroy();
   inlineEditor.clearCache();
+  formSnapBefore = null;
   Object.assign(state, {
     pdfBytes: null,
     doc: null,
@@ -2878,14 +3099,19 @@ async function fontFor(texts, variant = 'regular') {
 function exportTexts(boxes, marks, settings = {}) {
   const hf = sanitizeHeaderFooter(settings.headerFooter);
   const ctx = { file: state.fileName, date: todayLabel(), page: 1, total: 1, bates: hf ? batesLabel(hf.batesPrefix, 0, 1, 0) : '' };
-  const formTouched = Object.keys(settings.formValues ?? {}).length > 0 || settings.flattenForm;
+  const customFields = settings.customFormFields ?? [];
+  const formTouched = Object.keys(settings.formValues ?? {}).length > 0 || customFields.length > 0 || settings.flattenForm;
   return [
     ...boxes.map((b) => b.text),
     ...marks.filter((m) => m.type === 'stamp').map((m) => m.label),
     settings.watermark?.text,
     ...(hf ? HEADER_FOOTER_SLOTS.map((s) => formatTokens(hf[s], ctx)) : []),
     ...(settings.ocrWords ?? []).map((w) => w.text),
-    ...(formTouched ? [...state.formFields.map((f) => f.value), ...Object.values(settings.formValues)].filter((v) => typeof v === 'string') : []),
+    ...(formTouched ? [
+      ...state.formFields.map((f) => f.value),
+      ...customFields.flatMap((cf) => [cf.defaultValue, ...(cf.options ?? [])]),
+      ...Object.values(settings.formValues ?? {}),
+    ].filter((v) => typeof v === 'string') : []),
   ];
 }
 
@@ -3874,6 +4100,7 @@ async function loadDocument(bytes, { fresh = false, order = null, changed = [] }
   }
   state.textCache = new Map();
   inlineEditor.clearCache();
+  formSnapBefore = null;
   state.search = { ...state.search, hits: [], index: -1 };
   state.formFields = await readFormFields(bytes);
   loadOutline(doc);
@@ -4190,7 +4417,10 @@ if (missing.length) console.info('Ribbon: các lệnh chưa có trong bản này
 els.view.addEventListener('contextmenu', pageContextMenu);
 els.thumbs.addEventListener('contextmenu', thumbContextMenu);
 for (const ev of [EVENTS.toolChanged, EVENTS.selectionChanged, EVENTS.pagesUpdated, EVENTS.loaded]) store.on(ev, updateQuick);
-store.on(EVENTS.toolChanged, () => inlineEditor.syncPages());
+store.on(EVENTS.toolChanged, () => {
+  inlineEditor.syncPages();
+  formOverlay.syncAllPages();
+});
 
 renderAccountArea();
 buildSearchPanel();

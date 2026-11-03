@@ -599,3 +599,43 @@ flowchart TD
 ### 11.3. Kết quả kiểm thử
 
 - Toàn bộ **149/149 bài kiểm tra tự động** (`node --test tests/`) vượt qua 100%.
+
+
+---
+
+## 12. Giai Đoạn 2: Biểu Mẫu Tương Tác AcroForm 3-Trong-1 (`src/form-builder.js`)
+
+Bản nâng cấp hoàn thiện hệ sinh thái biểu mẫu điện tử chuẩn PDF AcroForm với 3 trụ cột tích hợp đồng bộ: **Điền trực tiếp trên trang**, **Thiết kế kéo-thả 4 loại trường chuẩn** và **Tự dò dòng chấm / ô trống thông minh**:
+
+### 12.1. Sơ đồ quy trình xử lý (Workflow Diagram)
+
+```mermaid
+flowchart TD
+    A["Mở PDF / Chuyển sang Ký & Điền"] --> B["readFormFields: Đọc AcroForm gốc + quy đổi tọa độ Widget sang View Space"]
+    B --> C["createFormOverlayController: Dựng lớp Widget tương tác trực tiếp trên trang (hỗ trợ phím Tab)"]
+    
+    D["Bấm 'Tự dò biểu mẫu' (autoDetectForms)"] --> E["detectCandidateFields: Quét dòng chấm (..... / _____) & ký tự ô trống (☐)"]
+    E --> F["Tự động sinh trường TextField & CheckBox đặt khớp vị trí, tránh đè vùng đã có"]
+    F --> C
+
+    G["Chọn 'Tạo ô mẫu' (tool:formField)"] --> H["Kéo vùng trên trang -> Mở openFormFieldDialog"]
+    H --> I["Chọn TextField / CheckBox / Dropdown / RadioGroup + Ràng buộc Required/ReadOnly"]
+    I --> C
+
+    C --> J["Xuất PDF (exportPdf -> writeCustomFormFields + applyForm)"]
+    J --> K["Ghi chuẩn AcroForm tương thích Adobe Reader / Chrome (hoặc Flatten nếu bật)"]
+```
+
+### 12.2. Các module và tính năng mới
+
+| Tệp | Chức năng |
+|---|---|
+| `src/geometry.js` & `src/pdfops.js` | Bổ sung `pdfToView`, `rectPdfToView` đảo ngược mọi góc xoay `0°/90°/180°/270°`; nâng cấp `readFormFields` trích xuất tọa độ hiển thị của từng Widget AcroForm. |
+| `src/form-builder.js` | Bộ xử lý AcroForm 3-trong-1: chuẩn hóa định danh tiếng Việt (`slugifyFieldName`, `uniqueFieldName`), tự động dò dòng chấm & ô trống (`detectCandidateFields`), sắp xếp thứ tự phím `Tab` (`sortWidgetsForTabOrder`), hộp thoại thiết kế trường (`openFormFieldDialog`) và lớp phủ điền/kéo-thả trực tiếp (`createFormOverlayController`). |
+| `src/form-builder.css` | Giao diện White Theme tinh gọn cho các ô nhập trên mặt giấy PDF, tay nắm kéo/đổi cỡ và thanh công cụ Biểu mẫu. |
+| `src/export.js` | Bổ sung `writeCustomFormFields` tạo mới `PDFTextField`, `PDFCheckBox`, `PDFDropdown`, `PDFRadioGroup` nhúng font Unicode tiếng Việt khi xuất. |
+| `tests/form-builder.test.mjs` | Bộ 5 unit test kiểm thử toàn diện quy đổi tọa độ 4 chiều xoay, khử trùng tên trường tiếng Việt, thứ tự phím Tab và thuật toán tự dò dòng chấm/hộp kiểm. |
+
+### 12.3. Kết quả kiểm thử
+
+- Toàn bộ **154/154 bài kiểm tra tự động** (`node --test tests/`) vượt qua 100%.

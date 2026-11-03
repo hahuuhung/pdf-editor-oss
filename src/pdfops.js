@@ -1,6 +1,8 @@
 // Page-level operations on PDF bytes with pdf-lib (loaded as the global `PDFLib`).
 // Each function returns new bytes and never modifies its input.
 
+import { normalizeRotation, rectPdfToView } from './geometry.js';
+
 function load(bytes) {
   return PDFLib.PDFDocument.load(bytes);
 }
@@ -126,22 +128,86 @@ export async function blankPdf(size = [595.28, 841.89]) {
   return doc.save();
 }
 
-// Reads the AcroForm fields that this editor can fill: text, checkbox, dropdown and radio group.
+// Reads the AcroForm fields that this editor can fill: text, checkbox, dropdown and radio group,
+// along with each widget's page index and view-space rectangle for on-page interactive filling.
 export async function readFormFields(bytes) {
+  let doc;
   let form;
   try {
-    form = (await load(bytes)).getForm();
+    doc = await load(bytes);
+    form = doc.getForm();
   } catch {
     return [];
   }
+  const pages = doc.getPages();
+  const pageByRef = new Map(pages.map((p, idx) => [p.ref.toString(), idx]));
+  const pageAnnots = pages.map((p) => {
+    try {
+      const annots = p.node.Annots();
+      return annots ? new Set(annots.asArray().map((r) => r.toString())) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+  const resolveWidgetPage = (w) => {
+    try {
+      const pRef = w.P?.();
+      if (pRef && pageByRef.has(pRef.toString())) return pageByRef.get(pRef.toString());
+    } catch {
+      // Fall back to scanning page annotation arrays below.
+    }
+    try {
+      const dictStr = doc.context.getObjectRef?.(w.dict)?.toString();
+      if (dictStr) {
+        const idx = pageAnnots.findIndex((set) => set.has(dictStr));
+        if (idx >= 0) return idx;
+      }
+    } catch {
+      // Ignore if widget dict has no indirect ref.
+    }
+    return 0;
+  };
+  const extractWidgets = (f) => {
+    try {
+      const rawWidgets = f.acroField?.getWidgets?.() ?? [];
+      return rawWidgets.map((w, idx) => {
+        const pageIdx = resolveWidgetPage(w);
+        const p = pages[pageIdx] ?? pages[0];
+        const crop = p.getCropBox();
+        const rot = normalizeRotation(p.getRotation().angle);
+        const r = w.getRectangle();
+        const vr = rectPdfToView(rot, crop, r.x, r.y, r.width, r.height);
+        let exportValue = '';
+        try {
+          exportValue = w.getOnValue?.()?.decodeText?.() ?? String(w.getOnValue?.() ?? '').replace(/^\//, '');
+        } catch {
+          exportValue = `${idx + 1}`;
+        }
+        return {
+          page: pageIdx,
+          x: Math.round(vr.x * 100) / 100,
+          y: Math.round(vr.y * 100) / 100,
+          w: Math.max(8, Math.round(vr.w * 100) / 100),
+          h: Math.max(8, Math.round(vr.h * 100) / 100),
+          exportValue,
+        };
+      });
+    } catch {
+      return [];
+    }
+  };
+
   const out = [];
   for (const f of form.getFields()) {
     const name = f.getName();
     try {
-      if (f instanceof PDFLib.PDFTextField) out.push({ name, kind: 'text', value: f.getText() ?? '', multiline: f.isMultiline() });
-      else if (f instanceof PDFLib.PDFCheckBox) out.push({ name, kind: 'check', value: f.isChecked() });
-      else if (f instanceof PDFLib.PDFDropdown) out.push({ name, kind: 'choice', value: f.getSelected()[0] ?? '', options: f.getOptions() });
-      else if (f instanceof PDFLib.PDFRadioGroup) out.push({ name, kind: 'radio', value: f.getSelected() ?? '', options: f.getOptions() });
+      const widgets = extractWidgets(f);
+      const required = !!f.isRequired?.();
+      const readOnly = !!f.isReadOnly?.();
+      if (f instanceof PDFLib.PDFTextField) out.push({ name, kind: 'text', value: f.getText() ?? '', multiline: f.isMultiline(), required, readOnly, widgets });
+      else if (f instanceof PDFLib.PDFCheckBox) out.push({ name, kind: 'check', value: f.isChecked(), required, readOnly, widgets });
+      else if (f instanceof PDFLib.PDFDropdown) out.push({ name, kind: 'choice', value: f.getSelected()[0] ?? '', options: f.getOptions(), required, readOnly, widgets });
+      else if (f instanceof PDFLib.PDFRadioGroup) out.push({ name, kind: 'radio', value: f.getSelected() ?? '', options: f.getOptions(), required, readOnly, widgets });
     } catch {
       // A malformed field is skipped rather than blocking the whole form.
     }

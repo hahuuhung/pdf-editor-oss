@@ -115,6 +115,8 @@ export const SHORT_LABELS = Object.freeze({
   'tool:richtext': 'Hộp RichText',
   insertTable: 'Chèn bảng',
   insertFormula: 'Công thức',
+  'tool:formField': 'Tạo ô mẫu',
+  autoDetectForms: 'Tự dò biểu mẫu',
 });
 
 // Tabs → groups → buttons. A group shows its `large` buttons (icon above a label) first, then its
@@ -180,7 +182,7 @@ export const RIBBON_TABS = Object.freeze([
       { label: 'Chữ ký & Mã', large: ['signature', 'qrBarcode'], small: ['batesStamp'] },
       { label: 'Điền chữ', large: ['tool:text'], small: ['tool:date'] },
       { label: 'Ký hiệu', small: ['tool:check', 'tool:cross', 'tool:dot'] },
-      { label: 'Biểu mẫu', large: ['forms'] },
+      { label: 'Biểu mẫu AcroForm', large: ['forms', 'tool:formField'], small: ['autoDetectForms'] },
     ],
   },
   {

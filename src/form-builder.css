@@ -1,0 +1,175 @@
+/* White Theme UI for AcroForm On-Page Filling & Visual Form Builder */
+
+.acroform-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+}
+
+.acroform-layer.interactive .acro-widget {
+  pointer-events: auto;
+}
+
+.acro-widget {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid rgba(37, 99, 235, 0.38);
+  border-radius: 3px;
+  background: rgba(239, 246, 255, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.acro-widget.is-required {
+  border-color: rgba(220, 38, 38, 0.5);
+}
+
+.acro-widget:focus-within,
+.acro-widget:hover {
+  border-color: var(--accent, #2563eb);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+}
+
+.acro-widget.is-custom {
+  border-style: dashed;
+  border-color: #7c3aed;
+  background: rgba(245, 243, 255, 0.55);
+}
+
+.acroform-layer.design-mode .acro-widget.is-custom {
+  border-style: solid;
+  border-width: 1.5px;
+}
+
+.acro-input-text,
+.acro-input-select {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #0f172a;
+  padding: 1px 4px;
+  font-family: Arial, Helvetica, sans-serif;
+  box-sizing: border-box;
+  resize: none;
+}
+
+.acro-input-check,
+.acro-input-radio {
+  width: 78%;
+  height: 78%;
+  margin: 0;
+  accent-color: var(--accent, #2563eb);
+  cursor: pointer;
+}
+
+.acro-badge {
+  display: none;
+  position: absolute;
+  left: -1px;
+  top: -17px;
+  height: 16px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: #7c3aed;
+  border: none;
+  border-radius: 3px 3px 0 0;
+  cursor: move;
+  white-space: nowrap;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.acro-edit-btn {
+  display: none;
+  position: absolute;
+  right: -1px;
+  top: -17px;
+  width: 18px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 3px 3px 0 0;
+  background: #5b21b6;
+  color: #fff;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.acro-resize {
+  display: none;
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: #7c3aed;
+  border: 1px solid #fff;
+  cursor: nwse-resize;
+}
+
+.acro-widget.is-custom:hover .acro-badge,
+.acro-widget.is-custom:hover .acro-edit-btn,
+.acro-widget.is-custom:hover .acro-resize,
+.acroform-layer.design-mode .acro-widget.is-custom .acro-badge,
+.acroform-layer.design-mode .acro-widget.is-custom .acro-edit-btn,
+.acroform-layer.design-mode .acro-widget.is-custom .acro-resize {
+  display: inline-flex;
+}
+
+.fb-dlg .fb-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.forms-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--divider, #ececef);
+}
+
+.forms-toolbar button {
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 7px;
+  padding: 5px 8px;
+  font-size: 12px;
+  background: var(--card, #ffffff);
+  color: var(--text, #0f172a);
+}
+
+.forms-toolbar button.primary {
+  background: var(--accent, #2563eb);
+  border-color: var(--accent, #2563eb);
+  color: #fff;
+}
+
+.form-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.form-field-tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #6d28d9;
+  background: #ede9fe;
+}

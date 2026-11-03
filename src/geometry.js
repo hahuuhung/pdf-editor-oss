@@ -36,6 +36,33 @@ export function rectViewToPdf(rotation, box, vx, vy, w, h) {
   return { x: Math.min(ax, bx), y: Math.min(ay, by), width: Math.abs(bx - ax), height: Math.abs(by - ay) };
 }
 
+// Forward transform from PDF user space (origin bottom-left) to view space (origin top-left).
+export function pdfToView(rotation, box, px, py) {
+  const { x, y, width: W, height: H } = box;
+  switch (normalizeRotation(rotation)) {
+    case 90:
+      return [py - y, px - x];
+    case 180:
+      return [x + W - px, py - y];
+    case 270:
+      return [y + H - py, x + W - px];
+    default:
+      return [px - x, y + H - py];
+  }
+}
+
+// Axis-aligned PDF rectangle { x, y, width, height } converted into view space { x, y, w, h }.
+export function rectPdfToView(rotation, box, px, py, pw, ph) {
+  const [ax, ay] = pdfToView(rotation, box, px, py);
+  const [bx, by] = pdfToView(rotation, box, px + pw, py + ph);
+  return {
+    x: Math.min(ax, bx),
+    y: Math.min(ay, by),
+    w: Math.abs(bx - ax),
+    h: Math.abs(by - ay),
+  };
+}
+
 // Smallest rectangle { x, y, w, h } holding every rectangle in `rects`; null when there are none.
 export function boundingBox(rects) {
   if (!rects.length) return null;
