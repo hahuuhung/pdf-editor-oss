@@ -1,0 +1,42 @@
+/* Giao diện White Theme cho công cụ Sửa văn bản gốc trực tiếp trên PDF (Inline Text Edit) */
+
+.inline-edit-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.page .tbox {
+  z-index: 6;
+}
+
+.inline-edit-slot {
+  position: absolute;
+  border: 1px dashed rgba(59, 130, 246, 0.45);
+  border-radius: 3px;
+  background: rgba(239, 246, 255, 0.14);
+  pointer-events: auto;
+  cursor: text;
+  transition: border-color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.inline-edit-slot:hover {
+  border-color: var(--accent, #2563eb);
+  border-style: solid;
+  background: rgba(219, 234, 254, 0.32);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.inline-edit-active {
+  position: absolute;
+  z-index: 12;
+  padding: 1px 3px;
+  border-radius: 3px;
+  outline: 2px solid var(--accent, #2563eb);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
+  white-space: pre;
+  line-height: 1.18;
+  font-family: Arial, Helvetica, sans-serif;
+  cursor: text;
+}

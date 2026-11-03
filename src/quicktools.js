@@ -6,6 +6,15 @@ import { el, icon } from './dom.js';
 
 export const QUICK_TOOLS = [
   {
+    title: 'Soạn thảo & Chỉnh sửa sâu',
+    items: [
+      { label: 'Sửa chữ gốc PDF', desc: 'Nhấp vào dòng chữ có sẵn trên trang để sửa trực tiếp', icon: 'edit', hue: 'var(--pink)', tool: 'editPdfText' },
+      { label: 'Chèn bảng biểu', desc: 'Tạo bảng nhiều dòng cột, căn lề ngay trên trang PDF', icon: 'table', hue: 'var(--pink)', action: 'insertTable' },
+      { label: 'Chèn công thức toán', desc: 'Soạn thảo biểu thức toán học sắc nét trên tài liệu', icon: 'formula', hue: 'var(--pink)', action: 'insertFormula' },
+      { label: 'Hình khối & Sơ đồ', desc: 'Vẽ khối lưu đồ và đường nối tự động bám dính', icon: 'shape', hue: 'var(--pink)', tool: 'shape' },
+    ],
+  },
+  {
     title: 'Sắp xếp & tối ưu',
     items: [
       { label: 'Gộp PDF', desc: 'Ghép nhiều tệp thành một, đổi thứ tự tùy ý', icon: 'merge', hue: 'var(--green)', action: 'merge' },

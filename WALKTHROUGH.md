@@ -564,3 +564,38 @@ flowchart TD
   - *Giới hạn dung lượng mã QR*: Mã QR hỗ trợ tối đa khoảng 270 byte UTF-8 (Version 1–10, mức sửa lỗi L) để đảm bảo kích thước ô vuông rõ nét khi in trên giấy A4; nếu nhập văn bản quá dài hệ thống sẽ cảnh báo trực tiếp.
   - *Ký tự tiếng Việt trong Barcode 1D*: Chuẩn Code-128B chỉ hỗ trợ ký tự ASCII (32–126), nên `toBarcodeAscii` tự động chuyển chữ tiếng Việt có dấu sang không dấu (`Hồ sơ` -> `Ho so`) để máy đọc mã vạch luôn quét được.
   - *Đóng dấu hàng loạt nhiều trang*: Khi đóng mã QR có biến động `{page}` lên hàng chục trang, mỗi trang tạo một ảnh PNG riêng nhưng có kích thước nhỏ gọn (~2–4 KB/ảnh) nên không gây tràn bộ nhớ RAM.
+
+
+---
+
+## 11. Giai Đoạn 1: Sửa Chữ Gốc Trực Tiếp (Inline PDF Text Edit) & Mở Khóa Bộ Công Cụ Office Vector
+
+Bản nâng cấp mở khóa trọn bộ 5 công cụ Office Vector ẩn sẵn trong kho mã nguồn lên thanh Ribbon và bổ sung công cụ **Sửa chữ gốc trực tiếp trên trang PDF (`editPdfText`)** theo cơ chế **Smart Mask + Unicode Overlay**:
+
+### 11.1. Sơ đồ quy trình xử lý (Workflow Diagram)
+
+```mermaid
+flowchart TD
+    A["Chọn 'Sửa chữ gốc' trên Ribbon / Quick Tools"] --> B["clusterEditableLines: Gom text run theo dòng & tách cột độc lập"]
+    B --> C["Hiển thị các khung nét đứt màu xanh trên mặt trang"]
+    C --> D["Người dùng nhấp vào dòng chữ cần sửa"]
+    D --> E["sampleBackgroundHex & sampleForegroundHex: Lấy mẫu màu nền giấy & màu mực gốc"]
+    E --> F["Mở ô nhập trực tiếp khớp tọa độ, cỡ chữ & màu sắc"]
+    F --> G{"Enter / Nhấp ra ngoài"}
+    G -- "Văn bản không đổi" --> C
+    G -- "Có thay đổi / Xóa trắng" --> H["buildInlineReplacement: Tạo Smart Mask phủ sạch chữ cũ + Hộp chữ Unicode mới (1 bước Undo)"]
+```
+
+### 11.2. Các module và tính năng mới
+
+| Tệp | Chức năng |
+|---|---|
+| `src/inline-edit.js` | Thuật toán phân cụm dòng/cột `clusterEditableLines`, lấy mẫu màu nền trung vị `sampleBackgroundHex`, màu mực tương phản `sampleForegroundHex`, tạo gói thay thế `buildInlineReplacement` và bộ điều khiển giao diện `createInlineTextEditor`. |
+| `src/inline-edit.css` | Giao diện White Theme nhẹ nhàng cho khung chọn dòng gốc (`.inline-edit-slot`) và ô nhập trực tiếp (`.inline-edit-active`). |
+| `src/ribbon.js` & `src/quicktools.js` | Đưa `tool:editPdfText` cùng toàn bộ 5 công cụ Office (`tool:shape`, `tool:connector`, `tool:richtext`, `insertTable`, `insertFormula`) lên thanh Ribbon (`Trang đầu`, `Chỉnh sửa`, `Chú thích`, `QAT`) và Màn hình chính. |
+| `src/app.js` | Kết nối vòng đời `inlineEditor` với nạp/đóng tệp, chuyển đổi công cụ, chọn hộp chữ và hoàn tác `Ctrl+Z`. |
+| `tests/inline-edit.test.mjs` | Bộ 5 unit test kiểm thử gom dòng, tách cột ngang, trích xuất màu nền/màu mực trên bộ đệm RGBA, Smart Mask và cấu hình Ribbon. |
+
+### 11.3. Kết quả kiểm thử
+
+- Toàn bộ **149/149 bài kiểm tra tự động** (`node --test tests/`) vượt qua 100%.

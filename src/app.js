@@ -102,6 +102,7 @@ import { openPrintDialog } from './print.js';
 import { loadAppOptions, openOptionsDialog, saveAppOptions } from './options.js';
 import { createWordStudio } from './word-editor.js';
 import { openBatesDialog, openQrBarcodeDialog } from './stamping.js';
+import { buildInlineReplacement, createInlineTextEditor } from './inline-edit.js';
 import { RIBBON_TABS, commandTool, detectPlatform, formatShortcut, ribbonCommandIds, tabForCommand, toolCommand } from './ribbon.js';
 import { closeContextMenus, createPanelLayout, createRibbon, createStatusBar, openContextMenu } from './ribbonbar.js';
 
@@ -129,6 +130,7 @@ const TOOL_INFO = {
   select: { label: 'Chọn', icon: 'cursor' },
   hand: { label: 'Bàn tay (kéo để cuộn trang)', icon: 'hand' },
   text: { label: 'Thêm chữ', icon: 'text' },
+  editPdfText: { label: 'Sửa chữ gốc trên trang', icon: 'edit' },
   date: { label: 'Ngày hôm nay', icon: 'date', type: 'text' },
   note: { label: 'Ghi chú', icon: 'note' },
   highlight: { label: 'Tô sáng', icon: 'highlight' },
@@ -323,6 +325,30 @@ const office = createOfficeUi({
 });
 
 let renderTimer = null;
+const inlineEditor = createInlineTextEditor({
+  state,
+  getPageTextItems: (i) => pdfTextItems(i),
+  applyInlineReplacement: ({ page, block, newText, bgHex, fgHex }) => {
+    const rep = buildInlineReplacement({
+      page,
+      block,
+      newText,
+      bgHex,
+      fgHex,
+      markId: nextMarkId(state.marks),
+      boxId: nextId(state.boxes),
+    });
+    if (!rep) return false;
+    const before = snap();
+    state.marks = addMark(state.marks, rep.maskMark);
+    if (rep.textBox) state.boxes = addBox(state.boxes, rep.textBox);
+    pushHistory(before);
+    state.selected = rep.textBox ? { kind: 'box', id: rep.textBox.id } : { kind: 'mark', id: rep.maskMark.id };
+    refresh();
+    return true;
+  },
+  onStatus: (msg) => setStatus(msg),
+});
 let ribbon = null; // created at startup (ribbonbar.js)
 let layout = null; // side-panel columns and drawers
 let propEdit = null;
@@ -582,7 +608,7 @@ function updateQuick() {
 }
 
 function applyToolClasses() {
-  const textTool = state.tool === 'text' || state.tool === 'date';
+  const textTool = state.tool === 'text' || state.tool === 'date' || state.tool === 'editPdfText';
   state.pageEls.forEach((div) => {
     div.classList.toggle('tool-select', state.tool === 'select');
     div.classList.toggle('tool-text', textTool);
@@ -811,6 +837,7 @@ function renderPageOverlay(i) {
   });
   div.append(svg);
   for (const b of state.boxes) if (b.page === i) div.append(boxElement(b));
+  inlineEditor.renderPageSlots(i, div);
 }
 
 // Watermark and header/footer preview, drawn the same way the exporter places them.
@@ -937,7 +964,7 @@ function boxElement(box) {
   }, box.text, grip);
 
   node.addEventListener('pointerdown', () => {
-    if (['select', 'text', 'date'].includes(state.tool)) select({ kind: 'box', id: box.id });
+    if (['select', 'text', 'date', 'editPdfText'].includes(state.tool)) select({ kind: 'box', id: box.id });
   });
   node.addEventListener('focus', () => (textEdit = snap()));
   node.addEventListener('input', () => {
@@ -1346,6 +1373,12 @@ function renderProps() {
   const v = item ?? styleFor(type);
   const title = sel ? `Đã chọn: ${typeLabel(type)}` : TOOL_INFO[state.tool]?.label ?? typeLabel(type);
   const row = [el('span', { class: 'title' }, title)];
+  if (type === 'editPdfText') {
+    row.push(el('span', { class: 'lbl' }, 'Nhấp vào bất kỳ dòng chữ có sẵn trên trang để sửa trực tiếp (Enter để lưu, Esc để hủy, Ctrl+Z hoàn tác).'));
+    els.propsbar.replaceChildren(...row);
+    els.propsbar.classList.remove('hidden');
+    return;
+  }
 
   if (type !== 'redact' && type !== 'image') {
     row.push(propControl('Màu', bindEdit(el('input', { type: 'color', value: v.color ?? '#000000' }), (t) => applyProp('color', t.value))));
@@ -1456,7 +1489,7 @@ function renderComments() {
   if (state.panel !== 'comments') return;
   const items = [
     ...state.boxes.map((b) => ({ kind: 'box', id: b.id, page: b.page, x: b.x, y: b.y, type: 'text', color: b.color, text: b.text })),
-    ...state.marks.map((m) => ({ kind: 'mark', id: m.id, page: m.page, x: m.x, y: m.y, type: m.type, color: m.color, text: m.text, extra: m.type === 'link' ? m.url : m.type === 'stamp' ? m.label : '' })),
+    ...state.marks.map((m) => ({ kind: 'mark', id: m.id, page: m.page, x: m.x, y: m.y, type: m.type, customTitle: m.label === 'inline-mask' ? 'Lớp phủ sửa chữ gốc' : '', color: m.color, text: m.text, extra: m.type === 'link' ? m.url : m.type === 'stamp' ? m.label : '' })),
   ].sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x);
   const count = $('comment-count');
   if (count) count.textContent = items.length ? `${items.length}` : '';
@@ -1470,7 +1503,7 @@ function renderComments() {
     const card = el('div', { class: `c-item${selected ? ' on' : ''}`, onclick: () => focusItem(it) },
       el('div', { class: 'meta' },
         el('span', { class: 'dot', style: `background:${it.type === 'redact' ? '#000' : it.color}` }),
-        el('span', { class: 'grow' }, `${typeLabel(it.type)} · trang ${it.page + 1}`),
+        el('span', { class: 'grow' }, `${it.customTitle || typeLabel(it.type)} · trang ${it.page + 1}`),
         el('button', { class: 'icon', title: 'Xóa', onclick: (e) => { e.stopPropagation(); select({ kind: it.kind, id: it.id }); deleteSelected(); } }, icon('trash', 14)),
       ),
       it.extra ? el('div', { class: 'body faint' }, it.extra) : null,
@@ -2787,6 +2820,7 @@ function unlockQuick() {
 async function closeDocument() {
   if (!(await confirmReplace())) return;
   state.doc?.destroy();
+  inlineEditor.clearCache();
   Object.assign(state, {
     pdfBytes: null,
     doc: null,
@@ -3839,6 +3873,7 @@ async function loadDocument(bytes, { fresh = false, order = null, changed = [] }
     state.pageSizes.push({ width, height });
   }
   state.textCache = new Map();
+  inlineEditor.clearCache();
   state.search = { ...state.search, hits: [], index: -1 };
   state.formFields = await readFormFields(bytes);
   loadOutline(doc);
@@ -4155,6 +4190,7 @@ if (missing.length) console.info('Ribbon: các lệnh chưa có trong bản này
 els.view.addEventListener('contextmenu', pageContextMenu);
 els.thumbs.addEventListener('contextmenu', thumbContextMenu);
 for (const ev of [EVENTS.toolChanged, EVENTS.selectionChanged, EVENTS.pagesUpdated, EVENTS.loaded]) store.on(ev, updateQuick);
+store.on(EVENTS.toolChanged, () => inlineEditor.syncPages());
 
 renderAccountArea();
 buildSearchPanel();

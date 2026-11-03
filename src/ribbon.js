@@ -109,6 +109,12 @@ export const SHORT_LABELS = Object.freeze({
   'tool:check': 'Dấu tích',
   'tool:cross': 'Dấu chéo',
   'tool:dot': 'Dấu chấm',
+  'tool:editPdfText': 'Sửa chữ gốc',
+  'tool:shape': 'Hình khối',
+  'tool:connector': 'Đường nối',
+  'tool:richtext': 'Hộp RichText',
+  insertTable: 'Chèn bảng',
+  insertFormula: 'Công thức',
 });
 
 // Tabs → groups → buttons. A group shows its `large` buttons (icon above a label) first, then its
@@ -122,7 +128,7 @@ export const RIBBON_TABS = Object.freeze([
     hue: 'var(--blue)',
     groups: [
       { label: 'Tệp', large: ['open', 'export'], small: ['print', 'newBlank', 'newWordDoc', 'openWord', 'closeDoc'] },
-      { label: 'Công cụ', large: ['tool:select'], small: ['tool:hand', 'tool:text', 'tool:highlight', 'tool:note', 'tool:ink', 'signature'] },
+      { label: 'Công cụ', large: ['tool:select', 'tool:editPdfText'], small: ['tool:hand', 'tool:text', 'tool:highlight', 'tool:note', 'tool:ink', 'signature'] },
       { label: 'Trang', small: ['rotateLeft', 'rotateRight', 'deletePage'] },
       { label: 'Tìm kiếm', large: ['find'], small: ['palette'] },
       { label: 'Công cụ nhanh', large: ['quickTools'], small: ['convertHub', 'compress', 'protect'] },
@@ -133,10 +139,10 @@ export const RIBBON_TABS = Object.freeze([
     label: 'Chú thích',
     hue: 'var(--orange)',
     groups: [
-      { label: 'Chọn', large: ['tool:select'] },
+      { label: 'Chọn & Sửa gốc', large: ['tool:select', 'tool:editPdfText'] },
       { label: 'Đánh dấu văn bản', large: ['tool:highlight'], small: ['tool:underline', 'tool:strike', 'tool:squiggly'] },
       { label: 'Ghi chú', large: ['tool:note', 'tool:stamp'] },
-      { label: 'Hình vẽ', large: ['tool:ink'], small: ['tool:rect', 'tool:oval', 'tool:line', 'tool:arrow'] },
+      { label: 'Hình vẽ', large: ['tool:ink'], small: ['tool:rect', 'tool:oval', 'tool:line', 'tool:arrow', 'tool:shape', 'tool:connector'] },
       { label: 'Danh sách', large: ['commentsPanel'], small: ['delete'] },
     ],
   },
@@ -145,8 +151,9 @@ export const RIBBON_TABS = Object.freeze([
     label: 'Chỉnh sửa',
     hue: 'var(--pink)',
     groups: [
-      { label: 'Chọn', large: ['tool:select'] },
-      { label: 'Chèn', large: ['tool:text', 'insertImage', 'qrBarcode'], small: ['tool:link'] },
+      { label: 'Chọn & Sửa gốc', large: ['tool:select', 'tool:editPdfText'] },
+      { label: 'Văn bản & Bảng', large: ['tool:text', 'tool:richtext', 'insertTable'], small: ['insertFormula', 'tool:link'] },
+      { label: 'Chèn đối tượng', large: ['insertImage', 'qrBarcode'], small: ['tool:shape', 'tool:connector'] },
       { label: 'Trình bày trang', large: ['watermark', 'headerFooter'], small: ['pageNumbers', 'batesStamp'] },
       { label: 'Tài liệu', large: ['properties'], small: ['addBookmark', 'chooseFont', 'delete'] },
     ],
@@ -169,7 +176,7 @@ export const RIBBON_TABS = Object.freeze([
     label: 'Ký & điền',
     hue: 'var(--purple)',
     groups: [
-      { label: 'Chọn', large: ['tool:select'] },
+      { label: 'Chọn & Sửa gốc', large: ['tool:select', 'tool:editPdfText'] },
       { label: 'Chữ ký & Mã', large: ['signature', 'qrBarcode'], small: ['batesStamp'] },
       { label: 'Điền chữ', large: ['tool:text'], small: ['tool:date'] },
       { label: 'Ký hiệu', small: ['tool:check', 'tool:cross', 'tool:dot'] },
@@ -279,7 +286,7 @@ export const QAT_LIMIT = 12;
 // from its context menu too.
 export const QAT_CHOICES = Object.freeze([
   'open', 'newBlank', 'export', 'print', 'undo', 'redo', 'find', 'palette', 'quickTools', 'convertHub',
-  'tool:select', 'tool:hand', 'tool:text', 'tool:highlight', 'signature', 'qrBarcode', 'batesStamp', 'protect', 'zoomIn', 'zoomOut', 'fitWidth', 'options', 'newWordDoc', 'openWord',
+  'tool:select', 'tool:editPdfText', 'tool:hand', 'tool:text', 'tool:highlight', 'insertTable', 'insertFormula', 'signature', 'qrBarcode', 'batesStamp', 'protect', 'zoomIn', 'zoomOut', 'fitWidth', 'options', 'newWordDoc', 'openWord',
 ]);
 
 // A stored list: unique known ids, at most `limit`. Anything but an array means "never customized".
