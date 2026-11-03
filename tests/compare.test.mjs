@@ -101,3 +101,4 @@ describe('summarizeDocumentChanges', () => {
     assert.equal(summary.totalRemovedLines, 1);
   });
 });
+

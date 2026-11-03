@@ -1220,3 +1220,4 @@ export function openBatesDialog({ state, onApply, onStatus }) {
     actions,
   });
 }
+

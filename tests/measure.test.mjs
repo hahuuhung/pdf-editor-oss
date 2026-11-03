@@ -104,3 +104,4 @@ describe('formatMeasurementLabel, dimensionTicks & mark helpers', () => {
     assert.deepEqual(moved.points[0], [15, 10]);
   });
 });
+

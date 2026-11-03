@@ -79,3 +79,4 @@ describe('computeBatchBatesPlan & buildOutputFileName', () => {
     assert.equal(buildOutputFileName('Hop-dong.pdf', '-batch', used), 'Hop-dong-batch (3).pdf');
   });
 });
+

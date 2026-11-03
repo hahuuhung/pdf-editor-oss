@@ -122,3 +122,4 @@ test('Ribbon exposes editPdfText and all 5 office tools', () => {
     assert.ok(allCmds.has(cmd), `Expected ${cmd} to be present on RIBBON_TABS`);
   }
 });
+

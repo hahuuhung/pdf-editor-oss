@@ -116,3 +116,4 @@ describe('formatting helpers & autoSaveScheduler', () => {
     assert.equal(count, 1);
   });
 });
+

@@ -95,3 +95,4 @@ test('detectCandidateFields detects dotted lines and checkboxes while skipping o
   assert.ok(checkCand);
   assert.equal(checkCand.name, 'dong_y_dieu_khoan');
 });
+

@@ -101,3 +101,4 @@ test('computeStampPlacement and resolveCodeDynamicText calculate coordinates and
   });
   assert.equal(resolved, 'Doc:hop-dong.pdf|P:2/10|D:28/10/2026');
 });
+

@@ -427,3 +427,4 @@ export function createLoupeController({ viewEl }) {
     toggle,
   };
 }
+
