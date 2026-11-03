@@ -117,6 +117,13 @@ export const SHORT_LABELS = Object.freeze({
   insertFormula: 'Công thức',
   'tool:formField': 'Tạo ô mẫu',
   autoDetectForms: 'Tự dò biểu mẫu',
+  'tool:measureDist': 'Đo khoảng cách',
+  'tool:measurePerim': 'Đo chu vi',
+  'tool:measureArea': 'Đo diện tích',
+  'tool:measureAngle': 'Đo góc',
+  'tool:calibrateScale': 'Kẻ tỷ lệ mẫu',
+  measureScaleDialog: 'Tỷ lệ bản vẽ',
+  toggleLoupe: 'Kính lúp 3x',
 });
 
 // Tabs → groups → buttons. A group shows its `large` buttons (icon above a label) first, then its
@@ -145,6 +152,7 @@ export const RIBBON_TABS = Object.freeze([
       { label: 'Đánh dấu văn bản', large: ['tool:highlight'], small: ['tool:underline', 'tool:strike', 'tool:squiggly'] },
       { label: 'Ghi chú', large: ['tool:note', 'tool:stamp'] },
       { label: 'Hình vẽ', large: ['tool:ink'], small: ['tool:rect', 'tool:oval', 'tool:line', 'tool:arrow', 'tool:shape', 'tool:connector'] },
+      { label: 'Đo đạc kỹ thuật', large: ['tool:measureDist', 'tool:measureArea'], small: ['tool:measurePerim', 'tool:measureAngle', 'measureScaleDialog', 'toggleLoupe'] },
       { label: 'Danh sách', large: ['commentsPanel'], small: ['delete'] },
     ],
   },
@@ -213,7 +221,7 @@ export const RIBBON_TABS = Object.freeze([
     hue: 'var(--faint)',
     groups: [
       { label: 'Thu phóng', large: ['zoom100'], small: ['zoomIn', 'zoomOut', 'fitPage', 'fitWidth'] },
-      { label: 'Hiển thị', large: ['toggleThumbs', 'toggleSidebar'] },
+      { label: 'Hiển thị', large: ['toggleThumbs', 'toggleSidebar', 'toggleLoupe'], small: ['measureScaleDialog', 'tool:calibrateScale'] },
       { label: 'Bảng bên', small: ['commentsPanel', 'outline', 'find', 'forms', 'news'] },
       { label: 'Giao diện', small: ['ribbonClassic', 'ribbonSimple', 'ribbonTabs', 'themeSystem', 'themeLight', 'themeDark', 'options'] },
     ],

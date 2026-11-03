@@ -8,7 +8,7 @@ import { OFFICE_RESIZABLE, OFFICE_TYPES, sanitizeOfficeData } from './office/ind
 
 export const MARK_TYPES = [
   'note', 'highlight', 'underline', 'strike', 'squiggly', 'rect', 'oval', 'line', 'arrow', 'ink',
-  'stamp', 'image', 'link', 'redact', 'symbol', ...OFFICE_TYPES,
+  'stamp', 'image', 'link', 'redact', 'symbol', 'measure', ...OFFICE_TYPES,
 ];
 export const NOTE_SIZE = 18;
 
@@ -33,6 +33,7 @@ export const MARK_DEFAULTS = {
   link: { color: '#1b63e0', width: 1, opacity: 1, fill: null },
   redact: { color: '#000000', width: 1, opacity: 1, fill: null },
   symbol: { color: '#000000', width: 1.5, opacity: 1, fill: null },
+  measure: { color: '#0284c7', width: 1.5, opacity: 1, fill: '#e0f2fe' },
   shape: { color: '#1d4ed8', width: 1.5, opacity: 1, fill: '#dbeafe' },
   connector: { color: '#334155', width: 1.5, opacity: 1, fill: null },
   formula: { color: '#000000', width: 1, opacity: 1, fill: null },
@@ -105,7 +106,7 @@ export function normalizeRect(x1, y1, x2, y2) {
 // Axis-aligned box that contains a mark, used for selection outlines.
 export function markBounds(m) {
   if (m.type === 'note') return { x: m.x, y: m.y, w: NOTE_SIZE, h: NOTE_SIZE };
-  if (m.type === 'line' || m.type === 'arrow' || m.type === 'ink' || m.type === 'connector') {
+  if (m.type === 'line' || m.type === 'arrow' || m.type === 'ink' || m.type === 'connector' || m.type === 'measure') {
     if (m.points.length === 0) return { x: m.x, y: m.y, w: 0, h: 0 };
     const xs = m.points.map((p) => p[0]);
     const ys = m.points.map((p) => p[1]);

@@ -110,6 +110,14 @@ import {
   openFormFieldDialog,
   sanitizeCustomField,
 } from './form-builder.js';
+import {
+  createLoupeController,
+  formatMeasurementLabel,
+  openScaleCalibrationDialog,
+  renderMeasureSvg,
+  sanitizeMeasureScale,
+  segmentDistancePt,
+} from './measure.js';
 import { RIBBON_TABS, commandTool, detectPlatform, formatShortcut, ribbonCommandIds, tabForCommand, toolCommand } from './ribbon.js';
 import { closeContextMenus, createPanelLayout, createRibbon, createStatusBar, openContextMenu } from './ribbonbar.js';
 
@@ -125,6 +133,7 @@ const EMPTY_SETTINGS = Object.freeze({
   meta: null,
   formValues: {},
   customFormFields: [],
+  measureScale: null,
   flattenForm: false,
   protection: null, // { userPassword, ownerPassword, allowPrint, allowCopy, allowModify } applied on save
   sanitize: false,
@@ -161,10 +170,15 @@ const TOOL_INFO = {
   connector: { label: 'Đường nối', icon: 'connector' },
   richtext: { label: 'Hộp chữ định dạng', icon: 'richtext' },
   formField: { label: 'Tạo ô biểu mẫu AcroForm', icon: 'formAdd' },
+  measureDist: { label: 'Thước đo khoảng cách', icon: 'ruler', type: 'measure', measureKind: 'dist' },
+  measurePerim: { label: 'Đo chu vi đa tuyến', icon: 'ruler', type: 'measure', measureKind: 'perim' },
+  measureArea: { label: 'Đo diện tích đa giác', icon: 'area', type: 'measure', measureKind: 'area' },
+  measureAngle: { label: 'Đo góc 3 điểm', icon: 'angle', type: 'measure', measureKind: 'angle' },
+  calibrateScale: { label: 'Kẻ 2 điểm mẫu để hiệu chuẩn tỷ lệ', icon: 'ruler' },
 };
-const TYPE_LABELS = { text: 'Chữ', image: 'Hình ảnh', symbol: 'Ký hiệu', formula: 'Công thức', table: 'Bảng' };
-const DRAG_TOOLS = new Set(['highlight', 'underline', 'strike', 'squiggly', 'rect', 'oval', 'line', 'arrow', 'ink', 'link', 'redact', 'formField', ...OFFICE_DRAG_TOOLS]);
-const STROKE_TYPES = new Set(['underline', 'strike', 'squiggly', 'rect', 'oval', 'line', 'arrow', 'ink', 'stamp', 'symbol', 'shape', 'connector']);
+const TYPE_LABELS = { text: 'Chữ', image: 'Hình ảnh', symbol: 'Ký hiệu', formula: 'Công thức', table: 'Bảng', measure: 'Đo đạc' };
+const DRAG_TOOLS = new Set(['highlight', 'underline', 'strike', 'squiggly', 'rect', 'oval', 'line', 'arrow', 'ink', 'link', 'redact', 'formField', 'measureDist', 'calibrateScale', ...OFFICE_DRAG_TOOLS]);
+const STROKE_TYPES = new Set(['underline', 'strike', 'squiggly', 'rect', 'oval', 'line', 'arrow', 'ink', 'stamp', 'symbol', 'shape', 'connector', 'measure']);
 
 const typeLabel = (type) => TYPE_LABELS[type] ?? TOOL_INFO[type]?.label ?? type;
 const toolType = (tool) => TOOL_INFO[tool]?.type ?? tool;
@@ -206,6 +220,8 @@ const ACTIONS = {
   headerFooter: { label: 'Đầu/chân trang & số Bates…', icon: 'header', needsDoc: true, run: openHeaderFooterDialog },
   forms: { label: 'Điền biểu mẫu', icon: 'form', needsDoc: true, run: () => showPanel('forms') },
   autoDetectForms: { label: 'Tự dò ô biểu mẫu trên trang', icon: 'wand', needsDoc: true, run: runAutoDetectForms },
+  measureScaleDialog: { label: 'Hiệu chuẩn tỷ lệ bản vẽ…', icon: 'ruler', needsDoc: true, run: () => openMeasureScale() },
+  toggleLoupe: { label: 'Kính lúp phóng đại bản vẽ', icon: 'loupe', needsDoc: true, checked: () => loupe.active, run: toggleMeasureLoupe },
   ocr: { label: 'Nhận dạng chữ (OCR)…', icon: 'scan', needsDoc: true, run: openOcrDialog },
   toggleOcr: { label: 'Hiện/ẩn khung chữ OCR', icon: 'scan', needsDoc: true, checked: () => state.showOcr, run: toggleOcrBoxes },
   exportText: { label: 'Xuất văn bản (.txt)', icon: 'file', needsDoc: true, run: () => exportContent('txt') },
@@ -389,6 +405,32 @@ const formOverlay = createFormOverlayController({
     updateSettings({ customFormFields });
   },
 });
+
+const loupe = createLoupeController({ viewEl: els.view });
+let multiMeasure = null; // { kind: 'perim' | 'area' | 'angle', page, pts, cursor }
+
+function toggleMeasureLoupe() {
+  const on = loupe.toggle();
+  updateQuick();
+  renderProps();
+  setStatus(on ? `Đã bật Kính lúp ${loupe.magnification}×. Di chuột trên bản vẽ để soi chi tiết.` : 'Đã tắt Kính lúp.');
+}
+
+function openMeasureScale(measuredPt = null) {
+  openScaleCalibrationDialog({
+    currentScale: state.settings.measureScale,
+    measuredPt,
+    onStartReferenceTool: () => {
+      setTool('calibrateScale');
+      setStatus('Hãy kéo chuột nối 2 điểm mốc đã biết kích thước thực trên bản vẽ.');
+    },
+    onApply: (nextScale) => {
+      updateSettings({ measureScale: nextScale });
+      if (state.tool === 'calibrateScale') setTool('measureDist');
+      setStatus(`Đã lưu tỷ lệ bản vẽ (~1:${nextScale.ratio}, đơn vị ${nextScale.unit}).`);
+    },
+  });
+}
 let ribbon = null; // created at startup (ribbonbar.js)
 let layout = null; // side-panel columns and drawers
 let propEdit = null;
@@ -670,6 +712,7 @@ function setTool(tool) {
     ribbon?.selectTab(tab);
   }
   if (state.gesture) cancelGesture();
+  if (multiMeasure) finishMultiMeasure(false);
   select(null);
   state.tool = tool;
   applyToolClasses();
@@ -959,6 +1002,9 @@ function markElement(m) {
     case 'ink':
       g.append(polyline(m.points));
       break;
+    case 'measure':
+      renderMeasureSvg(g, m, state.settings.measureScale);
+      break;
     case 'stamp': {
       const label = m.label || 'STAMP';
       const size = Math.max(4, Math.min(h * 0.5, (w - 12) / (Math.max(1, label.length) * 0.62)));
@@ -1122,6 +1168,10 @@ function onPagePointerDown(e, page) {
   if (tool === 'note') return addNote(page, p.x, p.y);
   if (tool === 'stamp') return addStamp(page, p.x, p.y);
   if (TOOL_INFO[tool]?.symbol) return addSymbol(page, p.x, p.y, TOOL_INFO[tool].symbol);
+  if (TOOL_INFO[tool]?.measureKind && TOOL_INFO[tool].measureKind !== 'dist') {
+    handleMultiMeasureClick(e, page, TOOL_INFO[tool].measureKind, p);
+    return;
+  }
   if (!DRAG_TOOLS.has(tool)) return;
   state.gesture = { tool, page, x0: p.x, y0: p.y, x: p.x, y: p.y, pts: [[p.x, p.y]], pointerId: e.pointerId };
   window.addEventListener('pointermove', onGestureMove);
@@ -1153,6 +1203,11 @@ function onGestureEnd(e) {
     openCreateFormFieldAt(g.page, rect);
     return;
   }
+  if (g.tool === 'calibrateScale') {
+    const ptDist = segmentDistancePt([g.x0, g.y0], [g.x, g.y]);
+    if (ptDist >= 3) openMeasureScale(ptDist);
+    return;
+  }
   if (draft) commitMark(draft);
 }
 
@@ -1168,6 +1223,16 @@ function draftFromGesture(g) {
   if (g.tool === 'formField') {
     const r = normalizeRect(g.x0, g.y0, g.x, g.y);
     return r.w >= 4 || r.h >= 4 ? { type: 'rect', page: g.page, ...r, color: '#7c3aed', fill: '#ede9fe', width: 1.5, opacity: 0.7 } : null;
+  }
+  if (g.tool === 'measureDist') {
+    return Math.hypot(g.x - g.x0, g.y - g.y0) >= 3
+      ? { type: 'measure', label: 'dist', page: g.page, points: [[g.x0, g.y0], [g.x, g.y]] }
+      : null;
+  }
+  if (g.tool === 'calibrateScale') {
+    return Math.hypot(g.x - g.x0, g.y - g.y0) >= 3
+      ? { type: 'arrow', page: g.page, points: [[g.x0, g.y0], [g.x, g.y]], color: '#7c3aed', width: 2 }
+      : null;
   }
   if (OFFICE_DRAG_TOOLS.has(g.tool)) return office.draft(g);
   if (g.tool === 'ink') {
@@ -1199,7 +1264,7 @@ function showPreview() {
 function commitMark(draft) {
   const before = snap();
   const style = styleFor(draft.type);
-  const fill = draft.type === 'rect' || draft.type === 'oval' || draft.type === 'shape' ? style.fill : null;
+  const fill = draft.type === 'rect' || draft.type === 'oval' || draft.type === 'shape' || draft.type === 'measure' ? style.fill : null;
   const id = nextMarkId(state.marks);
   state.marks = addMark(state.marks, { ...style, text: '', ...draft, fill, id });
   pushHistory(before);
@@ -1236,6 +1301,77 @@ function addStamp(page, x, y) {
   const w = stampWidth(label);
   const h = 34;
   commitMark({ type: 'stamp', page, x: x - w / 2, y: y - h / 2, w, h, label });
+}
+
+function onMultiMeasurePointerMove(e) {
+  if (!multiMeasure) return;
+  const p = toPoint(e, multiMeasure.page);
+  multiMeasure.cursor = [p.x, p.y];
+  const svg = pageSvg(multiMeasure.page);
+  if (!svg) return;
+  svg.querySelectorAll('.preview').forEach((n) => n.remove());
+  const pts = [...multiMeasure.pts, [p.x, p.y]];
+  if (pts.length < 2) return;
+  const node = markElement(sanitizeMark({
+    ...styleFor('measure'),
+    type: 'measure',
+    label: multiMeasure.kind,
+    page: multiMeasure.page,
+    points: pts,
+    id: 'preview',
+  }));
+  node.classList.add('preview');
+  svg.append(node);
+}
+
+function finishMultiMeasure(commit) {
+  const cur = multiMeasure;
+  multiMeasure = null;
+  window.removeEventListener('pointermove', onMultiMeasurePointerMove);
+  document.querySelectorAll('.preview').forEach((n) => n.remove());
+  if (!commit || !cur) {
+    renderProps();
+    return;
+  }
+  const minPts = cur.kind === 'perim' ? 2 : 3;
+  if (cur.pts.length < minPts) {
+    renderProps();
+    return;
+  }
+  commitMark({
+    type: 'measure',
+    label: cur.kind,
+    page: cur.page,
+    points: cur.pts,
+  });
+}
+
+function handleMultiMeasureClick(e, page, kind, p) {
+  if (!multiMeasure || multiMeasure.page !== page || multiMeasure.kind !== kind) {
+    if (multiMeasure) finishMultiMeasure(false);
+    multiMeasure = { kind, page, pts: [[p.x, p.y]], cursor: [p.x, p.y] };
+    window.addEventListener('pointermove', onMultiMeasurePointerMove);
+    renderProps();
+    setStatus(kind === 'angle'
+      ? 'Đã chọn điểm 1/3. Nhấp đỉnh góc rồi nhấp điểm thứ 3 để đo góc.'
+      : 'Nhấp tiếp các đỉnh trên bản vẽ. Nhấp đúp hoặc nhấn Enter để hoàn tất phép đo.');
+    return;
+  }
+
+  // Double-click or clicking near the starting vertex finishes a polyline/polygon measurement
+  const start = multiMeasure.pts[0];
+  const nearStart = multiMeasure.pts.length >= 3 && Math.hypot(p.x - start[0], p.y - start[1]) <= 8 / state.zoom;
+  if (e.detail >= 2 || nearStart) {
+    finishMultiMeasure(true);
+    return;
+  }
+
+  multiMeasure.pts.push([p.x, p.y]);
+  if (kind === 'angle' && multiMeasure.pts.length >= 3) {
+    finishMultiMeasure(true);
+    return;
+  }
+  renderProps();
 }
 
 function addSymbol(page, x, y, symbol) {
@@ -1418,7 +1554,7 @@ function renderProps() {
   const sel = state.selected;
   const item = findItem(sel);
   const type = currentType();
-  if (!type || (!sel && type === 'select')) {
+  if (!type || (!sel && type === 'select' && !loupe.active)) {
     els.propsbar.classList.add('hidden');
     els.propsbar.replaceChildren();
     return;
@@ -1426,6 +1562,29 @@ function renderProps() {
   const v = item ?? styleFor(type);
   const title = sel ? `Đã chọn: ${typeLabel(type)}` : TOOL_INFO[state.tool]?.label ?? typeLabel(type);
   const row = [el('span', { class: 'title' }, title)];
+  if (type === 'calibrateScale') {
+    row.push(
+      el('span', { class: 'lbl' }, 'Kéo chuột nối 2 điểm mốc đã biết chiều dài ngoài thực tế để hiệu chuẩn tỷ lệ bản vẽ.'),
+      el('span', { style: 'flex:1' }),
+      el('button', { onclick: () => openMeasureScale() }, icon('ruler', 15), 'Nhập tỷ lệ 1:N'),
+    );
+    els.propsbar.replaceChildren(...row);
+    els.propsbar.classList.remove('hidden');
+    return;
+  }
+  if (!sel && type === 'select' && loupe.active) {
+    const magSel = el('select', { onchange: (e) => loupe.setMagnification(e.target.value) },
+      [2, 3, 4].map((m) => el('option', { value: m, selected: m === loupe.magnification }, `${m}×`)),
+    );
+    row.push(
+      propControl('Độ phóng đại kính lúp', magSel),
+      el('span', { style: 'flex:1' }),
+      el('button', { onclick: toggleMeasureLoupe }, 'Tắt kính lúp'),
+    );
+    els.propsbar.replaceChildren(...row);
+    els.propsbar.classList.remove('hidden');
+    return;
+  }
   if (type === 'formField') {
     row.push(
       el('span', { class: 'lbl' }, 'Kéo thả hoặc nhấp trên trang để tạo ô biểu mẫu AcroForm (TextField, CheckBox, Dropdown, Radio).'),
@@ -1474,6 +1633,16 @@ function renderProps() {
   }
   if (type === 'text') {
     row.push(propControl('Cỡ', bindEdit(el('input', { type: 'number', min: 6, max: 96, value: v.fontSize }), (t) => applyProp('fontSize', clampFontSize(t.value)))));
+  }
+  if (type === 'measure') {
+    const sc = sanitizeMeasureScale(state.settings.measureScale);
+    row.push(
+      el('span', { class: 'scale-pill' }, `1:${sc.ratio} (${sc.unit})`),
+      el('button', { onclick: () => openMeasureScale() }, icon('ruler', 14), 'Đổi tỷ lệ'),
+    );
+    if (multiMeasure && multiMeasure.pts.length >= 2) {
+      row.push(el('button', { class: 'primary', onclick: () => finishMultiMeasure(true) }, 'Hoàn tất đo (Enter)'));
+    }
   }
   if (type === 'stamp') {
     const current = item ? item.label : state.stampLabel;
@@ -3042,6 +3211,8 @@ async function closeDocument() {
   state.doc?.destroy();
   inlineEditor.clearCache();
   formSnapBefore = null;
+  if (multiMeasure) finishMultiMeasure(false);
+  loupe.toggle(false);
   Object.assign(state, {
     pdfBytes: null,
     doc: null,
@@ -3104,6 +3275,7 @@ function exportTexts(boxes, marks, settings = {}) {
   return [
     ...boxes.map((b) => b.text),
     ...marks.filter((m) => m.type === 'stamp').map((m) => m.label),
+    ...marks.filter((m) => m.type === 'measure').map((m) => m.text || formatMeasurementLabel(m, settings.measureScale)),
     settings.watermark?.text,
     ...(hf ? HEADER_FOOTER_SLOTS.map((s) => formatTokens(hf[s], ctx)) : []),
     ...(settings.ocrWords ?? []).map((w) => w.text),
@@ -4101,6 +4273,8 @@ async function loadDocument(bytes, { fresh = false, order = null, changed = [] }
   state.textCache = new Map();
   inlineEditor.clearCache();
   formSnapBefore = null;
+  if (multiMeasure) finishMultiMeasure(false);
+  loupe.toggle(false);
   state.search = { ...state.search, hits: [], index: -1 };
   state.formFields = await readFormFields(bytes);
   loadOutline(doc);
@@ -4241,6 +4415,7 @@ store.on(EVENTS.pan, ({ active }) => {
   if (!active) return;
   navTarget = null;
   if (state.gesture) cancelGesture();
+  if (multiMeasure) finishMultiMeasure(false);
   cancelDrag?.();
 });
 
@@ -4346,10 +4521,12 @@ document.addEventListener('keydown', (e) => {
     if (dir) return go(() => nudgeSelected(...dir));
   }
   if (!mod && !e.altKey && key === 'h' && state.doc) return go(() => setTool(state.tool === 'hand' ? 'select' : 'hand'));
+  if (e.key === 'Enter' && multiMeasure) return go(() => finishMultiMeasure(true));
   if (e.key === 'Escape') {
     closeContextMenus();
     if (layout?.close()) return;
     if (state.gesture) cancelGesture();
+    else if (multiMeasure) finishMultiMeasure(false);
     else if (state.tool !== 'select') setTool('select');
     else select(null);
   }

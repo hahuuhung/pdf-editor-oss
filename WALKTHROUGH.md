@@ -639,3 +639,44 @@ flowchart TD
 ### 12.3. Kết quả kiểm thử
 
 - Toàn bộ **154/154 bài kiểm tra tự động** (`node --test tests/`) vượt qua 100%.
+
+
+---
+
+## 13. Giai Đoạn 3: Đo Đạc Bản Vẽ Kỹ Thuật, Hiệu Chuẩn Tỷ Lệ & Kính Lúp (`src/measure.js`)
+
+Bản nâng cấp trang bị bộ công cụ đo lường kỹ thuật chính xác dành cho bản vẽ kiến trúc, cơ khí, quy hoạch và tài liệu kỹ thuật:
+
+### 13.1. Sơ đồ quy trình xử lý (Workflow Diagram)
+
+```mermaid
+flowchart TD
+    A["Chọn Hiệu chuẩn tỷ lệ (measureScale / tool:calibrateScale)"] --> B{"Phương thức hiệu chuẩn"}
+    B -- "Tỷ lệ chuẩn 1:N" --> C["scaleFromPreset: Chọn 1:1 .. 1:500 & đơn vị mm/cm/m/in/ft"]
+    B -- "Đoạn mẫu 2 điểm" --> D["Kẻ 2 điểm mốc trên bản vẽ -> calibrateFromSegment"]
+    C --> E["Lưu state.settings.measureScale + Tự cập nhật nhãn mọi phép đo trên trang"]
+    D --> E
+
+    F["Chọn Công cụ Đo trên thẻ Chú thích"] --> G{"Chế độ đo"}
+    G -- "Khoảng cách (tool:measureDist)" --> H["Kéo 2 điểm -> Đường gióng kích thước + vạch vuông góc dimensionTicks"]
+    G -- "Chu vi (tool:measurePerim)" --> I["Nhấp đa điểm -> polylineLengthPt (Nhấp đúp / Enter hoàn tất)"]
+    G -- "Diện tích (tool:measureArea)" --> J["Nhấp đỉnh đa giác -> Công thức Shoelace polygonAreaPt2"]
+    G -- "Đo góc (tool:measureAngle)" --> K["Nhấp 3 điểm A-B-C -> Góc nội tiếp angleDegrees tại đỉnh B"]
+    H & I & J & K --> L["Xuất PDF Vector sắc nét trong src/export.js"]
+
+    M["Bật Kính lúp (toggleLoupe)"] --> N["createLoupeController: Thấu kính tròn nổi 2x - 4x theo con trỏ"]
+```
+
+### 13.2. Các module và tính năng mới
+
+| Tệp | Chức năng |
+|---|---|
+| `src/measure.js` | Bộ toán học đo lường & UI hiệu chuẩn: `scaleFromPreset`, `calibrateFromSegment`, `sanitizeMeasureScale`, `segmentDistancePt`, `polylineLengthPt`, `polygonAreaPt2` (Shoelace), `angleDegrees`, `formatMeasurementLabel`, `dimensionTicks`, `renderMeasureSvg`, `openScaleCalibrationDialog` và `createLoupeController`. |
+| `src/measure.css` | Giao diện White Theme cho thấu kính phóng đại tròn nổi có tâm ngắm chữ thập (`2×`–`4×`) và nhãn đo kỹ thuật. |
+| `src/marks.js` & `src/export.js` | Bổ sung kiểu mark `'measure'` hỗ trợ di chuyển, chọn xóa, hoàn tác `Ctrl+Z` và vẽ vector trực tiếp lên trang PDF khi xuất tệp. |
+| `src/ribbon.js` & `src/quicktools.js` | Thêm nhóm **Đo đạc** trên thẻ `Chú thích`, nút **Kính lúp** trên thẻ `Xem` và thẻ công cụ nhanh trên màn hình bắt đầu. |
+| `tests/measure.test.mjs` | Bộ 8 unit test kiểm thử tỷ lệ chuẩn `1:1`/`1:100`, hiệu chuẩn đoạn mẫu, diện tích đa giác Shoelace, góc 3 điểm và vạch kích thước vuông góc. |
+
+### 13.3. Kết quả kiểm thử
+
+- Toàn bộ **162/162 bài kiểm tra tự động** (`node --test tests/`) vượt qua 100%.

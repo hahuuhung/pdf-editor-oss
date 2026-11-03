@@ -12,6 +12,7 @@ export const QUICK_TOOLS = [
       { label: 'Chèn bảng biểu', desc: 'Tạo bảng nhiều dòng cột, căn lề ngay trên trang PDF', icon: 'table', hue: 'var(--pink)', action: 'insertTable' },
       { label: 'Chèn công thức toán', desc: 'Soạn thảo biểu thức toán học sắc nét trên tài liệu', icon: 'formula', hue: 'var(--pink)', action: 'insertFormula' },
       { label: 'Hình khối & Sơ đồ', desc: 'Vẽ khối lưu đồ và đường nối tự động bám dính', icon: 'shape', hue: 'var(--pink)', tool: 'shape' },
+      { label: 'Đo đạc bản vẽ kỹ thuật', desc: 'Thước đo khoảng cách, chu vi, diện tích (m²) & kính lúp 3x', icon: 'ruler', hue: 'var(--blue)', tool: 'measureDist' },
     ],
   },
   {

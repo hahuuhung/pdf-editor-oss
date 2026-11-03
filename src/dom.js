@@ -110,6 +110,10 @@ export const ICONS = {
   barcode: '<path d="M4 5v14M7 5v14M10 5v14M14 5v14M17 5v14M20 5v14" stroke-width="1.8"/>',
   formAdd: '<rect x="3" y="4" width="15" height="15" rx="2"/><path d="M7 9h7M7 13h4M18 14v7M14.5 17.5h7"/>',
   wand: '<path d="M4 20L15 9M15 4v3M20 9h-3M18.5 5.5l-2 2M12 6l-1.5-1.5"/>',
+  ruler: '<path d="M3 17L17 3l4 4L7 21zM14 6l2 2M11 9l1.5 1.5M8 12l2 2M5 15l1.5 1.5"/>',
+  area: '<polygon points="4,18 8,6 19,8 17,19"/><circle cx="4" cy="18" r="1.5"/><circle cx="8" cy="6" r="1.5"/><circle cx="19" cy="8" r="1.5"/><circle cx="17" cy="19" r="1.5"/>',
+  angle: '<path d="M19 19H5L15 5"/><path d="M12 19a7 7 0 00-1.4-4.2"/>',
+  loupe: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M10.5 7.5v6M7.5 10.5h6"/>',
 };
 
 export function icon(name, size = 18) {

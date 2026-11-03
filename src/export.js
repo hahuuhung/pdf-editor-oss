@@ -17,6 +17,7 @@ import { OFFICE_TYPES, drawOpsPdf, officeOps } from './office/index.js';
 import { measure as officeMeasure } from './office/measure.js';
 import { smoothStrokePoints } from './options.js';
 import { sanitizeCustomField } from './form-builder.js';
+import { MEASURE_SUBTYPES, dimensionTicks, formatMeasurementLabel, measurementLabelAnchor } from './measure.js';
 
 const LINE_HEIGHT = 1.2;
 
@@ -74,7 +75,7 @@ function drawText(pc, text, vx, vy, { font, size, color, opacity = 1, angle = 0 
   }
 }
 
-function drawMark(pc, m, { bold, images, options = {} }) {
+function drawMark(pc, m, { regular, bold, images, options = {}, measureScale = null }) {
   const color = hexToRgb(m.color);
   const seg = (a, b, opts = {}) =>
     pc.page.drawLine({
@@ -166,6 +167,46 @@ function drawMark(pc, m, { bold, images, options = {} }) {
       break;
     }
     // 'link' is not drawn; it becomes a Link annotation.
+    case 'measure': {
+      const pts = m.points ?? [];
+      if (pts.length < 2) break;
+      const kind = MEASURE_SUBTYPES.includes(m.label) ? m.label : 'dist';
+      if (kind === 'area' && pts.length >= 3) {
+        polyline([...pts, pts[0]]);
+      } else {
+        polyline(pts);
+      }
+      if (kind === 'dist') {
+        for (const [t1, t2] of dimensionTicks(pts[0], pts[1], 4.5)) seg(t1, t2);
+      } else {
+        for (const [vx, vy] of pts) {
+          const p = pc.pt(vx, vy);
+          pc.page.drawEllipse({ x: p.x, y: p.y, xScale: 2, yScale: 2, color, opacity: m.opacity });
+        }
+      }
+      const text = m.text?.trim() ? m.text.trim() : formatMeasurementLabel(m, measureScale);
+      const fontToUse = regular || bold;
+      const fSize = 8.5;
+      let safeLabel = text;
+      try {
+        fontToUse.encodeText(safeLabel);
+      } catch {
+        safeLabel = stripDiacritics(safeLabel);
+      }
+      const tw = textWidth(fontToUse, safeLabel, fSize);
+      const [lx, ly] = measurementLabelAnchor(pts, kind);
+      const pillW = tw + 8;
+      const pillH = 13;
+      pc.page.drawRectangle({
+        ...pc.rect(lx - pillW / 2, ly - pillH / 2, pillW, pillH),
+        color: PDFLib.rgb(1, 1, 1),
+        opacity: 0.92,
+        borderColor: color,
+        borderWidth: 0.7,
+      });
+      drawText(pc, safeLabel, lx - tw / 2, ly + fSize * 0.35, { font: fontToUse, size: fSize, color });
+      break;
+    }
   }
 }
 
@@ -475,7 +516,7 @@ export async function exportPdf(pdfBytes, boxes, { fontBytes, marks = [], settin
       }
       drawOpsPdf(pc, ops, office, officeEncode);
     } else {
-      drawMark(pc, m, { bold, images, options: settings.options });
+      drawMark(pc, m, { regular, bold, images, options: settings.options, measureScale: settings.measureScale });
     }
   }
 

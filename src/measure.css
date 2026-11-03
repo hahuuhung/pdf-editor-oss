@@ -1,0 +1,82 @@
+/* White Theme styles for Technical Measurement tools & Floating Magnifier Loupe */
+
+.measure-label {
+  font-family: system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+  user-select: none;
+  pointer-events: none;
+}
+
+.pdf-loupe {
+  position: fixed;
+  width: 176px;
+  height: 176px;
+  border-radius: 50%;
+  border: 3px solid #ffffff;
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.16),
+    0 12px 32px rgba(15, 23, 42, 0.24);
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 900;
+  background: #ffffff;
+}
+
+.pdf-loupe.hidden {
+  display: none;
+}
+
+.loupe-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.loupe-crosshair::before,
+.loupe-crosshair::after {
+  content: '';
+  position: absolute;
+  background: rgba(37, 99, 235, 0.55);
+}
+
+.loupe-crosshair::before {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-0.5px);
+}
+
+.loupe-crosshair::after {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  transform: translateY(-0.5px);
+}
+
+.loupe-badge {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #1e293b;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+}
+
+.scale-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0369a1;
+  background: #e0f2fe;
+  border: 1px solid #bae6fd;
+}
