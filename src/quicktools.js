@@ -13,6 +13,7 @@ export const QUICK_TOOLS = [
       { label: 'Chèn công thức toán', desc: 'Soạn thảo biểu thức toán học sắc nét trên tài liệu', icon: 'formula', hue: 'var(--pink)', action: 'insertFormula' },
       { label: 'Hình khối & Sơ đồ', desc: 'Vẽ khối lưu đồ và đường nối tự động bám dính', icon: 'shape', hue: 'var(--pink)', tool: 'shape' },
       { label: 'Đo đạc bản vẽ kỹ thuật', desc: 'Thước đo khoảng cách, chu vi, diện tích (m²) & kính lúp 3x', icon: 'ruler', hue: 'var(--blue)', tool: 'measureDist' },
+      { label: 'So sánh 2 tệp PDF', desc: 'Đối chiếu song song, tô màu Đỏ/Xanh điểm khác biệt & xuất báo cáo', icon: 'compare', hue: 'var(--teal)', action: 'comparePdf' },
     ],
   },
   {

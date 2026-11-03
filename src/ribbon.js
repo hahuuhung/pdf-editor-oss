@@ -124,6 +124,7 @@ export const SHORT_LABELS = Object.freeze({
   'tool:calibrateScale': 'Kẻ tỷ lệ mẫu',
   measureScaleDialog: 'Tỷ lệ bản vẽ',
   toggleLoupe: 'Kính lúp 3x',
+  comparePdf: 'So sánh PDF',
 });
 
 // Tabs → groups → buttons. A group shows its `large` buttons (icon above a label) first, then its
@@ -140,7 +141,7 @@ export const RIBBON_TABS = Object.freeze([
       { label: 'Công cụ', large: ['tool:select', 'tool:editPdfText'], small: ['tool:hand', 'tool:text', 'tool:highlight', 'tool:note', 'tool:ink', 'signature'] },
       { label: 'Trang', small: ['rotateLeft', 'rotateRight', 'deletePage'] },
       { label: 'Tìm kiếm', large: ['find'], small: ['palette'] },
-      { label: 'Công cụ nhanh', large: ['quickTools'], small: ['convertHub', 'compress', 'protect'] },
+      { label: 'Công cụ nhanh', large: ['quickTools', 'comparePdf'], small: ['convertHub', 'compress', 'protect'] },
     ],
   },
   {
@@ -221,7 +222,7 @@ export const RIBBON_TABS = Object.freeze([
     hue: 'var(--faint)',
     groups: [
       { label: 'Thu phóng', large: ['zoom100'], small: ['zoomIn', 'zoomOut', 'fitPage', 'fitWidth'] },
-      { label: 'Hiển thị', large: ['toggleThumbs', 'toggleSidebar', 'toggleLoupe'], small: ['measureScaleDialog', 'tool:calibrateScale'] },
+      { label: 'Hiển thị', large: ['toggleThumbs', 'toggleSidebar', 'toggleLoupe', 'comparePdf'], small: ['measureScaleDialog', 'tool:calibrateScale'] },
       { label: 'Bảng bên', small: ['commentsPanel', 'outline', 'find', 'forms', 'news'] },
       { label: 'Giao diện', small: ['ribbonClassic', 'ribbonSimple', 'ribbonTabs', 'themeSystem', 'themeLight', 'themeDark', 'options'] },
     ],
@@ -231,7 +232,7 @@ export const RIBBON_TABS = Object.freeze([
 // The 'file' tab: commands in the left column ('-' is a separator), then labelled sections of
 // cards on the right. `hideDisabled` sections show only the commands that can run now.
 export const BACKSTAGE = Object.freeze({
-  nav: ['open', 'newBlank', 'newWordDoc', 'openWord', 'closeDoc', '-', 'export', 'print', '-', 'quickTools', 'convertHub', '-', 'properties', 'chooseFont', 'options', '-', 'shortcuts'],
+  nav: ['open', 'newBlank', 'newWordDoc', 'openWord', 'closeDoc', '-', 'export', 'print', '-', 'quickTools', 'convertHub', 'comparePdf', '-', 'properties', 'chooseFont', 'options', '-', 'shortcuts'],
   sections: [
     { label: 'Tạo tài liệu từ', items: ['newWordDoc', 'openWord', 'imagesToPdf', 'docxToPdf', 'excelToPdf'] },
     { label: 'Xuất thành', items: ['exportImage', 'exportImagesDpi', 'exportWord', 'exportExcel', 'exportText', 'exportHtml', 'extractImages'] },

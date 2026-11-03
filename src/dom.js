@@ -114,6 +114,7 @@ export const ICONS = {
   area: '<polygon points="4,18 8,6 19,8 17,19"/><circle cx="4" cy="18" r="1.5"/><circle cx="8" cy="6" r="1.5"/><circle cx="19" cy="8" r="1.5"/><circle cx="17" cy="19" r="1.5"/>',
   angle: '<path d="M19 19H5L15 5"/><path d="M12 19a7 7 0 00-1.4-4.2"/>',
   loupe: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M10.5 7.5v6M7.5 10.5h6"/>',
+  compare: '<rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/><path d="M6 9h2M16 9h2M16 13h2"/>',
 };
 
 export function icon(name, size = 18) {

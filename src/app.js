@@ -118,6 +118,7 @@ import {
   sanitizeMeasureScale,
   segmentDistancePt,
 } from './measure.js';
+import { createCompareWorkspace } from './compare.js';
 import { RIBBON_TABS, commandTool, detectPlatform, formatShortcut, ribbonCommandIds, tabForCommand, toolCommand } from './ribbon.js';
 import { closeContextMenus, createPanelLayout, createRibbon, createStatusBar, openContextMenu } from './ribbonbar.js';
 
@@ -222,6 +223,7 @@ const ACTIONS = {
   autoDetectForms: { label: 'Tự dò ô biểu mẫu trên trang', icon: 'wand', needsDoc: true, run: runAutoDetectForms },
   measureScaleDialog: { label: 'Hiệu chuẩn tỷ lệ bản vẽ…', icon: 'ruler', needsDoc: true, run: () => openMeasureScale() },
   toggleLoupe: { label: 'Kính lúp phóng đại bản vẽ', icon: 'loupe', needsDoc: true, checked: () => loupe.active, run: toggleMeasureLoupe },
+  comparePdf: { label: 'So sánh 2 phiên bản PDF…', icon: 'compare', run: () => openComparePdf() },
   ocr: { label: 'Nhận dạng chữ (OCR)…', icon: 'scan', needsDoc: true, run: openOcrDialog },
   toggleOcr: { label: 'Hiện/ẩn khung chữ OCR', icon: 'scan', needsDoc: true, checked: () => state.showOcr, run: toggleOcrBoxes },
   exportText: { label: 'Xuất văn bản (.txt)', icon: 'file', needsDoc: true, run: () => exportContent('txt') },
@@ -297,6 +299,7 @@ const els = {
   excelPdfInput: $('excel-pdf-input'),
   docxPdfInput: $('docx-pdf-input'),
   wordStudio: $('word-studio'),
+  compareWorkspace: $('compare-workspace'),
 };
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
@@ -485,6 +488,7 @@ wordStudio = createWordStudio({
 });
 
 function openNewWordDoc() {
+  if (compareWorkspace?.isOpen) compareWorkspace.close();
   els.view.classList.add('hidden');
   els.thumbs.closest('.panel.left')?.classList.add('hidden');
   els.start.classList.add('hidden');
@@ -492,11 +496,43 @@ function openNewWordDoc() {
 }
 
 async function openWordDocxFile(file) {
+  if (compareWorkspace?.isOpen) compareWorkspace.close();
   els.view.classList.add('hidden');
   els.thumbs.closest('.panel.left')?.classList.add('hidden');
   els.start.classList.add('hidden');
   const buf = await readFile(file);
   await wordStudio.openDocx(buf, file.name);
+}
+
+const compareWorkspace = createCompareWorkspace({
+  container: els.compareWorkspace,
+  getOpenPdf: () => (state.pdfBytes ? { bytes: state.pdfBytes, fileName: state.fileName } : null),
+  getFontBytes: async () => state.fontBytes || (await loadUnicodeFont('regular').catch(() => null)),
+  downloadFn: download,
+  onStatus: (msg, isErr) => setStatus(msg, isErr),
+  onClose: () => {
+    document.querySelector('.panel.left')?.classList.remove('hidden');
+    document.querySelector('.panel.right')?.classList.remove('hidden');
+    if (state.doc) els.view.classList.remove('hidden');
+    else els.start.classList.remove('hidden');
+  },
+});
+
+async function openComparePdf() {
+  if (wordStudio?.closeWordStudio) wordStudio.closeWordStudio();
+  els.wordStudio.classList.add('hidden');
+  if (compareWorkspace?.isOpen) compareWorkspace.close();
+  els.view.classList.add('hidden');
+  els.start.classList.add('hidden');
+  document.querySelector('.panel.left')?.classList.add('hidden');
+  document.querySelector('.panel.right')?.classList.add('hidden');
+  await compareWorkspace.open();
+}
+
+function closeCompareIfOpen() {
+  if (!compareWorkspace?.isOpen) return false;
+  compareWorkspace.close();
+  return true;
 }
 
 function readFile(file, as = 'arrayBuffer') {
@@ -3164,6 +3200,7 @@ function openQuickTools() {
 
 // The start screen (quick tools and a drop area) replaces the page view while no document is open.
 function showStart(on) {
+  if (compareWorkspace?.isOpen) compareWorkspace.close();
   els.start.classList.toggle('hidden', !on);
   els.view.classList.toggle('hidden', on);
   if (!on || els.start.childElementCount) return;
@@ -4525,6 +4562,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closeContextMenus();
     if (layout?.close()) return;
+    if (closeCompareIfOpen()) return;
     if (state.gesture) cancelGesture();
     else if (multiMeasure) finishMultiMeasure(false);
     else if (state.tool !== 'select') setTool('select');

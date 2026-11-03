@@ -680,3 +680,38 @@ flowchart TD
 ### 13.3. Kết quả kiểm thử
 
 - Toàn bộ **162/162 bài kiểm tra tự động** (`node --test tests/`) vượt qua 100%.
+
+
+---
+
+## 14. Giai Đoạn 4: Không Gian So Sánh 2 Phiên Bản PDF Toàn Màn Hình (`src/compare.js`)
+
+Bản nâng cấp cung cấp không gian làm việc chuyên biệt toàn màn hình giúp đối chiếu hợp đồng, bản vẽ sửa đổi và tài liệu nhiều phiên bản cả về nội dung văn bản lẫn điểm ảnh trực quan:
+
+### 14.1. Sơ đồ quy trình xử lý (Workflow Diagram)
+
+```mermaid
+flowchart TD
+    A["Bấm 'So sánh PDF' (comparePdf trên Trang đầu / Xem / Tệp)"] --> B["createCompareWorkspace.open: Tự nạp PDF đang mở vào Tài liệu A"]
+    B --> C["Người dùng chọn Tài liệu mới (B)"]
+    C --> D["Trích xuất dòng chữ (extractLinesFromPage) + Render Canvas đồng cỡ"]
+    D --> E["diffTextLines (LCS) + computePixelDiff (Đỏ #ef4444 / Xanh lá #16a34a / Hổ phách #f59e0b)"]
+    E --> F{"Chế độ hiển thị"}
+    F -- "Song song (Side-by-Side)" --> G["2 khung A & B cuộn đồng bộ (wireSyncScroll) + Nhãn trạng thái trang"]
+    F -- "Chồng lớp (Overlay Diff)" --> H["Canvas hợp nhất làm mờ nền giống nhau, bật nổi điểm sửa + Bộ chuyển nhanh Đỏ-Xanh / A / B"]
+    G & H --> I["Cột bên phải: Tóm tắt số trang khác, +dòng thêm / -dòng xóa (Nhấp nhảy thẳng tới trang)"]
+    I --> J["Bấm 'Xuất Báo cáo PDF' -> buildComparisonReportPdf tạo tệp PDF đối chiếu đa trang"]
+```
+
+### 14.2. Các module và tính năng mới
+
+| Tệp | Chức năng |
+|---|---|
+| `src/compare.js` | Thuật toán so sánh dòng LCS (`diffTextLines`), so sánh ma trận điểm ảnh RGBA (`computePixelDiff`), tổng hợp thay đổi toàn tài liệu (`summarizeDocumentChanges`), xuất PDF báo cáo đối chiếu (`buildComparisonReportPdf`) và không gian làm việc toàn màn hình (`createCompareWorkspace`). |
+| `src/compare.css` | Giao diện White Theme toàn màn hình cho thanh điều khiển đối chiếu, khung xem song song/chồng lớp và cột tóm tắt thay đổi bên phải. |
+| `index.html`, `src/ribbon.js`, `src/quicktools.js`, `src/app.js` | Tích hợp `#compare-workspace`, lệnh `comparePdf` trên thẻ `Trang đầu`, `Xem`, `Tệp` (Backstage) và màn hình bắt đầu, hỗ trợ phím `Esc` đóng nhanh. |
+| `tests/compare.test.mjs` | Bộ 5 unit test kiểm thử chuẩn hóa dòng chữ, LCS diff điều khoản tiếng Việt, tô màu Pixel Diff Đỏ/Xanh/Hổ phách và phân loại trang thêm/xóa/sửa. |
+
+### 14.3. Kết quả kiểm thử
+
+- Toàn bộ **167/167 bài kiểm tra tự động** (`node --test tests/`) vượt qua 100%.
