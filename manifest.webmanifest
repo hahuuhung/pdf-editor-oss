@@ -1,0 +1,19 @@
+{
+  "name": "PDF Editor PRO — Trình biên tập PDF ngoại tuyến",
+  "short_name": "PDF Editor",
+  "description": "Chỉnh sửa chữ gốc, biểu mẫu AcroForm, đo bản vẽ kỹ thuật, so sánh & xử lý hàng loạt PDF ngay trong trình duyệt.",
+  "lang": "vi",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#f8fafc",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='42' fill='%232563eb'/%3E%3Cpath d='M58 42h52l28 28v80H58z' fill='none' stroke='white' stroke-width='12' stroke-linejoin='round'/%3E%3Cpath d='M78 98h40M78 122h28' stroke='white' stroke-width='10' stroke-linecap='round'/%3E%3C/svg%3E",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

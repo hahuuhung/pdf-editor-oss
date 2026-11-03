@@ -1,0 +1,155 @@
+/* White Theme styles for Start Screen Draft Recovery Banner & Recent Files Grid */
+
+.ws-history-wrap {
+  max-width: 980px;
+  margin: 0 auto 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ws-draft-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: var(--selected, #eff6ff);
+  border: 1px solid var(--accent-soft, #bfdbfe);
+  border-radius: 12px;
+}
+
+.ws-draft-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ws-draft-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text, #0f172a);
+}
+
+.ws-draft-meta {
+  font-size: 12px;
+  color: var(--muted, #64748b);
+}
+
+.ws-draft-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-recent-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ws-recent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ws-recent-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0;
+}
+
+.ws-clear-btn {
+  border: 1px solid var(--border, #e4e4e7);
+  background: var(--card, #ffffff);
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.ws-clear-btn:hover {
+  color: var(--danger, #b42318);
+  border-color: var(--danger, #b42318);
+}
+
+.ws-recent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.ws-recent-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--card, #ffffff);
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.ws-recent-card:hover {
+  border-color: var(--accent, #2563eb);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.06);
+}
+
+.ws-recent-ico {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--subtle, #f8fafc);
+  color: var(--accent, #2563eb);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ws-recent-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ws-recent-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text, #0f172a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-recent-sub {
+  font-size: 11.5px;
+  color: var(--muted, #64748b);
+}
+
+.ws-recent-del {
+  border: none;
+  background: transparent;
+  color: var(--faint, #71717a);
+  font-size: 13px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.ws-recent-del:hover {
+  background: var(--hover, #f4f4f5);
+  color: var(--danger, #b42318);
+}

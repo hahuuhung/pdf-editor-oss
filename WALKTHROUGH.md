@@ -753,3 +753,40 @@ flowchart TD
 ### 15.3. Kết quả kiểm thử
 
 - Toàn bộ **172/172 bài kiểm tra tự động** (`node --test tests/`) vượt qua 100%.
+
+
+---
+
+## 16. Giai Đoạn 6: Tự Lưu Nháp IndexedDB, Tệp Gần Đây & PWA Ngoại Tuyến (`src/workspace-storage.js` + `sw.js`)
+
+Bản nâng cấp hoàn thiện trải nghiệm ứng dụng Desktop thực thụ: tự động lưu phiên làm việc ngầm trong trình duyệt, mở lại tệp gần đây tức thì với hàng rào bảo mật nghiêm ngặt cho tài liệu mật khẩu, và hoạt động ngoại tuyến 100% qua Progressive Web App (PWA):
+
+### 16.1. Sơ đồ quy trình xử lý & Hàng rào bảo mật (Workflow Diagram)
+
+```mermaid
+flowchart TD
+    A["Mở PDF / Chỉnh sửa trên trang (EVENTS.historyChanged)"] --> B["autoSaveScheduler (Debounce 2.0s)"]
+    B --> C{"shouldAutoSaveSession?"}
+    C -- "Tệp gốc có mật khẩu (isEncryptedSource) HOẶC đặt userPassword" --> D["TỪ CHỐI lưu trữ & Xóa sạch bản nháp cũ trong IndexedDB"]
+    C -- "Tài liệu thường hợp lệ (<= 45 MB)" --> E["Lưu bản sao độc lập (pdfBytes, boxes, marks, settings) vào IndexedDB"]
+
+    F["Mở màn hình Bắt đầu (#start)"] --> G["refreshStartHistoryUi"]
+    G --> H["Banner 'Khôi phục phiên làm việc chưa lưu' + Lưới thẻ 'Tệp mở gần đây' (MRU 8 tệp)"]
+    H --> I["Nút 'Xóa lịch sử & bản nháp' -> workspaceStorage.clearAll()"]
+
+    J["Cài đặt PWA / Mất kết nối mạng"] --> K["Service Worker (sw.js)"]
+    K --> L["Network-First cho App Shell nội bộ + Cache-First cho thư viện CDN & Font Unicode"]
+```
+
+### 16.2. Các module và tính năng mới
+
+| Tệp | Chức năng |
+|---|---|
+| `src/workspace-storage.js` | Bộ lưu trữ phiên làm việc IndexedDB kèm adapter RAM dự phòng (`createIndexedDbKvBackend`, `createMemoryKvBackend`), chốt chặn bảo mật loại trừ tệp mật khẩu (`shouldAutoSaveSession`), quản lý bản nháp & danh sách MRU (`createWorkspaceStorage`) và bộ lập lịch tự lưu (`createAutoSaveScheduler`). |
+| `src/workspace-storage.css` | Giao diện White Theme cho biểu ngữ khôi phục phiên làm việc và lưới thẻ tệp mở gần đây trên màn hình bắt đầu. |
+| `manifest.webmanifest` & `sw.js` | Khai báo cài đặt ứng dụng PWA tiếng Việt và Service Worker lưu đệm ngoại tuyến thông minh (bỏ qua tuyệt đối các API tài khoản). |
+| `tests/workspace-storage.test.mjs` | Bộ 5 unit test kiểm thử quy tắc chặn lưu tệp mã hóa mật khẩu, tính cô lập dữ liệu bản nháp, thứ tự MRU và bộ lập lịch Debounce. |
+
+### 16.3. Kết quả kiểm thử toàn dự án
+
+- Toàn bộ **177/177 bài kiểm tra tự động** (`node --test tests/`) vượt qua 100% với **0 lỗi**.

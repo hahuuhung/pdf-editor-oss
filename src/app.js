@@ -120,6 +120,12 @@ import {
 } from './measure.js';
 import { createCompareWorkspace } from './compare.js';
 import { flattenPdfBytes, openBatchDialog, openFlattenDialog } from './batch.js';
+import {
+  createAutoSaveScheduler,
+  createWorkspaceStorage,
+  formatFileSize,
+  formatRelativeTimeVi,
+} from './workspace-storage.js';
 import { RIBBON_TABS, commandTool, detectPlatform, formatShortcut, ribbonCommandIds, tabForCommand, toolCommand } from './ribbon.js';
 import { closeContextMenus, createPanelLayout, createRibbon, createStatusBar, openContextMenu } from './ribbonbar.js';
 
@@ -309,6 +315,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
 
 const store = new EditorStore({
   pdfBytes: null,
+  isEncryptedSource: false,
   doc: null, // pdf.js document for pdfBytes
   fileName: 'document.pdf',
   fontBytes: null,
@@ -413,6 +420,19 @@ const formOverlay = createFormOverlayController({
 });
 
 const loupe = createLoupeController({ viewEl: els.view });
+const workspaceStorage = createWorkspaceStorage();
+const autoSaveScheduler = createAutoSaveScheduler(async () => {
+  if (!state.pdfBytes) return;
+  await workspaceStorage.saveDraft({
+    fileName: state.fileName,
+    pdfBytes: state.pdfBytes,
+    boxes: state.boxes,
+    marks: state.marks,
+    settings: state.settings,
+    pageCount: state.pageSizes.length || 1,
+    isEncryptedSource: state.isEncryptedSource,
+  });
+}, 2000);
 let multiMeasure = null; // { kind: 'perim' | 'area' | 'angle', page, pts, cursor }
 
 function toggleMeasureLoupe() {
@@ -2297,7 +2317,7 @@ async function confirmReplace() {
 
 async function newBlankDocument() {
   if (!(await confirmReplace())) return;
-  await withBusy('Đang tạo tài liệu…', async () => openBytes(await blankPdf(), 'tai-lieu-moi.pdf'));
+  await withBusy('Đang tạo tài liệu…', async () => openBytes(await blankPdf(), 'tai-lieu-moi.pdf', { recordRecent: false }));
 }
 
 async function createFromImages(files) {
@@ -2319,6 +2339,8 @@ async function exportCurrent() {
   await withBusy('Đang xuất PDF…', async () => {
     const out = await protectOutput(await buildOutput());
     const name = `${baseName(state.fileName)}-edited.pdf`;
+    autoSaveScheduler.cancel();
+    workspaceStorage.clearDraft().catch(() => {});
     download(out, name);
     const notes = [];
     if (state.marks.some((m) => m.type === 'redact')) notes.push('Các trang có vùng che đã chuyển thành ảnh.');
@@ -3206,22 +3228,126 @@ function showStart(on) {
   if (compareWorkspace?.isOpen) compareWorkspace.close();
   els.start.classList.toggle('hidden', !on);
   els.view.classList.toggle('hidden', on);
-  if (!on || els.start.childElementCount) return;
-  els.start.append(
-    el('div', { class: 'start-hero' },
-      el('h1', {}, 'PDF Editor', el('span', { class: 'pro' }, 'PRO')),
-      el('p', { class: 'start-sub' }, 'Chỉnh sửa, chuyển đổi và bảo vệ PDF ngay trong trình duyệt. Tệp của bạn không rời khỏi máy.'),
-      el('div', { class: 'start-drop' },
-        icon('upload', 22),
-        el('span', { class: 'grow' }, 'Kéo thả tệp PDF vào đây để mở'),
-        el('button', { class: 'primary', onclick: () => runAction('open') }, icon('open', 16), 'Mở PDF'),
-        el('button', { onclick: () => runAction('newWordDoc') }, icon('word', 16), 'Soạn thảo Word'),
-        el('button', { onclick: () => runAction('newBlank') }, icon('file', 16), 'PDF trống'),
+  if (!on) return;
+  if (!els.start.childElementCount) {
+    els.start.append(
+      el('div', { class: 'start-hero' },
+        el('h1', {}, 'PDF Editor', el('span', { class: 'pro' }, 'PRO')),
+        el('p', { class: 'start-sub' }, 'Chỉnh sửa, chuyển đổi và bảo vệ PDF ngay trong trình duyệt. Tệp của bạn không rời khỏi máy.'),
+        el('div', { class: 'start-drop' },
+          icon('upload', 22),
+          el('span', { class: 'grow' }, 'Kéo thả tệp PDF vào đây để mở'),
+          el('button', { class: 'primary', onclick: () => runAction('open') }, icon('open', 16), 'Mở PDF'),
+          el('button', { onclick: () => runAction('newWordDoc') }, icon('word', 16), 'Soạn thảo Word'),
+          el('button', { onclick: () => runAction('newBlank') }, icon('file', 16), 'PDF trống'),
+        ),
       ),
-    ),
-    quickToolsGrid(runQuickTool),
-  );
+      el('div', { class: 'ws-history-wrap', id: 'ws-history-slot' }),
+      quickToolsGrid(runQuickTool),
+    );
+  }
+  refreshStartHistoryUi();
 }
+
+async function restoreSavedDraft(draft) {
+  await withBusy('Đang khôi phục phiên làm việc…', async () => {
+    await openBytes(draft.pdfBytes, draft.fileName, { encrypted: false, recordRecent: false });
+    state.boxes = draft.boxes ?? [];
+    state.marks = draft.marks ?? [];
+    state.settings = { ...EMPTY_SETTINGS, ...(draft.settings ?? {}) };
+    refresh();
+    setStatus(`Đã khôi phục bản nháp "${draft.fileName}".`);
+  });
+}
+
+async function refreshStartHistoryUi() {
+  const slot = document.getElementById('ws-history-slot');
+  if (!slot) return;
+  const [draft, recents] = await Promise.all([
+    workspaceStorage.loadDraft(),
+    workspaceStorage.listRecentFiles(),
+  ]);
+  slot.replaceChildren();
+
+  if (draft) {
+    const itemCount = (draft.boxes?.length ?? 0) + (draft.marks?.length ?? 0) + (draft.settings?.customFormFields?.length ?? 0);
+    slot.append(
+      el('div', { class: 'ws-draft-banner' },
+        el('div', { class: 'ws-draft-info' },
+          el('span', { class: 'ws-draft-title' }, `Khôi phục phiên làm việc chưa lưu: ${draft.fileName}`),
+          el('span', { class: 'ws-draft-meta' },
+            `${draft.pageCount} trang · ${itemCount} mục chỉnh sửa · Lưu tự động ${formatRelativeTimeVi(draft.savedAt)}`,
+          ),
+        ),
+        el('div', { class: 'ws-draft-actions' },
+          el('button', {
+            type: 'button',
+            class: 'ws-clear-btn',
+            onclick: async () => {
+              await workspaceStorage.clearDraft();
+              refreshStartHistoryUi();
+            },
+          }, 'Bỏ bản nháp'),
+          el('button', {
+            type: 'button',
+            class: 'primary',
+            onclick: () => restoreSavedDraft(draft),
+          }, 'Khôi phục ngay'),
+        ),
+      ),
+    );
+  }
+
+  if (recents.length) {
+    slot.append(
+      el('section', { class: 'ws-recent-sec' },
+        el('div', { class: 'ws-recent-head' },
+          el('h2', { class: 'ws-recent-title' }, 'Tệp mở gần đây'),
+          el('button', {
+            type: 'button',
+            class: 'ws-clear-btn',
+            onclick: async () => {
+              await workspaceStorage.clearAll();
+              refreshStartHistoryUi();
+              setStatus('Đã xóa toàn bộ bản nháp tự lưu và lịch sử tệp gần đây.');
+            },
+          }, 'Xóa lịch sử & bản nháp'),
+        ),
+        el('div', { class: 'ws-recent-grid' },
+          recents.map((item) => el('div', {
+            class: 'ws-recent-card',
+            role: 'button',
+            tabindex: '0',
+            onclick: () => withBusy('Đang mở tệp gần đây…', () => openBytes(item.pdfBytes, item.fileName, { encrypted: false })),
+            onkeydown: (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                withBusy('Đang mở tệp gần đây…', () => openBytes(item.pdfBytes, item.fileName, { encrypted: false }));
+              }
+            },
+          },
+            el('span', { class: 'ws-recent-ico' }, icon('file', 18)),
+            el('span', { class: 'ws-recent-body' },
+              el('span', { class: 'ws-recent-name' }, item.fileName),
+              el('span', { class: 'ws-recent-sub' }, `${item.pageCount} trang · ${formatFileSize(item.byteLength)} · ${formatRelativeTimeVi(item.openedAt)}`),
+            ),
+            el('button', {
+              type: 'button',
+              class: 'ws-recent-del',
+              title: 'Xóa khỏi danh sách gần đây',
+              onclick: async (e) => {
+                e.stopPropagation();
+                await workspaceStorage.removeRecentFile(item.id);
+                refreshStartHistoryUi();
+              },
+            }, '✕'),
+          )),
+        ),
+      ),
+    );
+  }
+}
+
 
 // Asks for a PDF, opens it, then runs `next` with what openPdfFile reports ({ encrypted }).
 function pickPdfThen(next) {
@@ -3248,6 +3374,8 @@ function unlockQuick() {
 
 async function closeDocument() {
   if (!(await confirmReplace())) return;
+  autoSaveScheduler.cancel();
+  await workspaceStorage.clearDraft();
   state.doc?.destroy();
   inlineEditor.clearCache();
   formSnapBefore = null;
@@ -3255,6 +3383,7 @@ async function closeDocument() {
   loupe.toggle(false);
   Object.assign(state, {
     pdfBytes: null,
+  isEncryptedSource: false,
     doc: null,
     fileName: 'document.pdf',
     pageSizes: [],
@@ -4380,9 +4509,9 @@ async function loadDocument(bytes, { fresh = false, order = null, changed = [] }
 }
 
 // Opens PDF bytes as a new document. If they cannot be read, the document that was open stays open.
-async function openBytes(bytes, name) {
-  const previous = { pdfBytes: state.pdfBytes, fileName: state.fileName, boxes: state.boxes, marks: state.marks, settings: state.settings, selected: state.selected, search: state.search };
-  Object.assign(state, { pdfBytes: bytes, fileName: name, boxes: [], marks: [], settings: EMPTY_SETTINGS, selected: null, search: { query: '', caseSensitive: false, hits: [], index: -1 } });
+async function openBytes(bytes, name, { encrypted = false, recordRecent = true } = {}) {
+  const previous = { pdfBytes: state.pdfBytes, isEncryptedSource: state.isEncryptedSource, fileName: state.fileName, boxes: state.boxes, marks: state.marks, settings: state.settings, selected: state.selected, search: state.search };
+  Object.assign(state, { pdfBytes: bytes, isEncryptedSource: Boolean(encrypted), fileName: name, boxes: [], marks: [], settings: EMPTY_SETTINGS, selected: null, search: { query: '', caseSensitive: false, hits: [], index: -1 } });
   showStart(false); // the page view must have its size before fitting the zoom
   try {
     await loadDocument(bytes, { fresh: true });
@@ -4392,6 +4521,14 @@ async function openBytes(bytes, name) {
     throw err;
   }
   store.clearHistory();
+  if (!encrypted && recordRecent) {
+    workspaceStorage.addRecentFile({
+      fileName: name,
+      pdfBytes: bytes,
+      pageCount: state.pageSizes.length,
+      isEncryptedSource: false,
+    }).catch(() => {});
+  }
   setStatus(`Đã mở ${name} (${state.pageSizes.length} trang).`);
 }
 
@@ -4417,7 +4554,7 @@ async function openPdfFile(file) {
   }
   await withBusy('Đang mở tệp…', async () => {
     try {
-      await openBytes(bytes, file.name);
+      await openBytes(bytes, file.name, { encrypted });
     } catch (err) {
       throw new Error(`Không mở được PDF: ${err.message}`);
     }
@@ -4689,7 +4826,12 @@ updateStatusBar();
 renderProps();
 renderPanel();
 showStart(!state.doc);
+store.on(EVENTS.historyChanged, () => autoSaveScheduler.schedule());
 store.handle('quick:run', ({ card }) => runQuickTool(card));
+
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
 
 // VET VIRAL account: restore a saved session, then check announcements every 30 minutes.
 refreshAccount({ silent: true });
